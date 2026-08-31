@@ -1,0 +1,1781 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>Resumo - Gerenciador de Equipes</title>
+
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', filename='css/style.css') }}"
+    >
+
+</head>
+
+
+<body>
+
+<div class="app">
+
+
+    <!-- ===================================================== -->
+    <!-- TOPO -->
+    <!-- ===================================================== -->
+
+    <header class="topbar">
+
+        <div class="topbar-title">
+
+            Gerenciador de Equipes
+
+        </div>
+
+
+        <div class="topbar-actions">
+
+            <button
+                class="btn btn-primary"
+                type="button"
+                onclick="window.location.href='/'"
+            >
+                BASE DE DADOS
+            </button>
+
+
+            <button
+                class="btn btn-primary"
+                type="button"
+                onclick="carregarResumo()"
+            >
+                ↻ ATUALIZAR
+            </button>
+
+        </div>
+
+    </header>
+
+
+    <!-- ===================================================== -->
+    <!-- CONTEÚDO -->
+    <!-- ===================================================== -->
+
+    <main class="main-content resumo-content">
+
+        <div class="resumo-layout">
+
+
+            <!-- ================================================= -->
+            <!-- PAINEL ESQUERDO - RESUMO -->
+            <!-- ================================================= -->
+
+            <section class="panel">
+
+
+                <!-- ================================================= -->
+                <!-- CABEÇALHO -->
+                <!-- ================================================= -->
+
+                <div class="panel-header">
+
+                    <div class="panel-title">
+                        RESUMO
+                    </div>
+
+
+                    <!-- ================================================= -->
+                    <!-- FILTRO DE BASE -->
+                    <!-- ================================================= -->
+
+                    <div class="base-filtro-container">
+
+                        <label>
+                            BASE
+                        </label>
+
+
+                        <div class="dropdown-base">
+
+                            <button
+                                type="button"
+                                id="btnFiltroBase"
+                                class="filtro-base"
+                                onclick="toggleFiltroBase(event)"
+                            >
+
+                                <span id="textoFiltroBase">
+                                    SELECIONAR TODOS
+                                </span>
+
+                                <span class="seta-dropdown">
+                                    ▼
+                                </span>
+
+                            </button>
+
+
+                            <div
+                                id="opcoesFiltroBase"
+                                class="opcoes-filtro-base"
+                            >
+
+                                <!-- Opções preenchidas pelo app.js -->
+
+                            </div>
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+
+                <!-- ================================================= -->
+                <!-- TABELA DO RESUMO -->
+                <!-- ================================================= -->
+
+                <div class="resumo-container">
+
+                    <div
+                        id="listaResumo"
+                        class="resumo-lista"
+                    >
+
+                        <div class="estado-carregando">
+                            Carregando resumo...
+                        </div>
+
+                    </div>
+
+                </div>
+
+            </section>
+
+
+            <!-- ================================================= -->
+            <!-- PAINEL DIREITO - PESSOAS DISPONÍVEIS -->
+            <!-- ================================================= -->
+
+            <section class="disponiveis-container">
+
+                <div class="disponiveis-titulo">
+                    TOTAL DE PESSOAS DISPONÍVEIS
+                </div>
+
+
+                <div
+                    id="tabelaDisponiveis"
+                    class="disponiveis-tabela"
+                >
+
+                    <div class="estado-carregando">
+                        Carregando...
+                    </div>
+
+                </div>
+
+            </section>
+
+
+        </div>
+
+    </main>
+
+</div>
+
+
+<!-- ========================================================= -->
+<!-- APP.JS COMPARTILHADO                                     -->
+<!-- ========================================================= -->
+
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+
+
+<script>
+
+
+// ============================================================
+// DADOS DO RESUMO
+// ============================================================
+
+let dadosResumo = null;
+
+
+// ============================================================
+// CARREGAR RESUMO
+// ============================================================
+
+async function carregarResumo() {
+
+    const container =
+        document.getElementById(
+            "listaResumo"
+        );
+
+
+    const tabelaDisponiveis =
+        document.getElementById(
+            "tabelaDisponiveis"
+        );
+
+
+    if (!container) {
+
+        return;
+
+    }
+
+
+    container.innerHTML = `
+        <div class="estado-carregando">
+            Carregando resumo...
+        </div>
+    `;
+
+
+    if (tabelaDisponiveis) {
+
+        tabelaDisponiveis.innerHTML = `
+            <div class="estado-carregando">
+                Carregando...
+            </div>
+        `;
+
+    }
+
+
+    try {
+
+        const resposta =
+            await fetch(
+                "/api/resumo"
+            );
+
+
+        if (!resposta.ok) {
+
+            throw new Error(
+                "Erro ao carregar o resumo."
+            );
+
+        }
+
+
+        dadosResumo =
+            await resposta.json();
+
+
+        // ====================================================
+        // RECUPERAR FILTRO SALVO
+        // ====================================================
+
+        if (
+            typeof carregarFiltroBaseSalvo === "function"
+        ) {
+
+            carregarFiltroBaseSalvo();
+
+        }
+
+
+        // ====================================================
+        // MONTAR DROPDOWN
+        // ====================================================
+
+        if (
+            typeof montarFiltroBases === "function"
+        ) {
+
+            montarFiltroBases();
+
+        }
+
+
+        // ====================================================
+        // RENDERIZAR
+        // ====================================================
+
+        renderizarResumo();
+
+        renderizarPessoasDisponiveis();
+
+    }
+
+
+    catch (erro) {
+
+        console.error(
+            "Erro ao carregar resumo:",
+            erro
+        );
+
+
+        container.innerHTML = `
+            <div class="estado-erro">
+                Erro ao carregar o resumo.
+            </div>
+        `;
+
+
+        if (tabelaDisponiveis) {
+
+            tabelaDisponiveis.innerHTML = `
+                <div class="estado-erro">
+                    Erro ao carregar.
+                </div>
+            `;
+
+        }
+
+    }
+
+}
+
+
+// ============================================================
+// APLICAR FILTRO DE BASE
+// ============================================================
+
+function aplicarFiltroBase() {
+
+    renderizarResumo();
+
+    renderizarPessoasDisponiveis();
+
+}
+
+
+// ============================================================
+// OBTER BASES FILTRADAS
+// ============================================================
+
+function obterBasesSelecionadasResumo() {
+
+    if (
+        !dadosResumo ||
+        !Array.isArray(
+            dadosResumo.bases
+        )
+    ) {
+
+        return [];
+
+    }
+
+
+    /*
+     * Array vazio significa TODAS AS BASES.
+     */
+
+    if (
+        !Array.isArray(
+            basesSelecionadas
+        ) ||
+        basesSelecionadas.length === 0
+    ) {
+
+        return dadosResumo.bases;
+
+    }
+
+
+    return dadosResumo.bases.filter(
+        item =>
+            basesSelecionadas.includes(
+                String(
+                    item.base ?? ""
+                ).trim()
+            )
+    );
+
+}
+
+
+// ============================================================
+// RENDERIZAR RESUMO
+// ============================================================
+
+function renderizarResumo() {
+
+    const container =
+        document.getElementById(
+            "listaResumo"
+        );
+
+
+    if (!container) {
+
+        return;
+
+    }
+
+
+    container.innerHTML = "";
+
+
+    if (
+        !dadosResumo ||
+        !Array.isArray(
+            dadosResumo.bases
+        )
+    ) {
+
+        container.innerHTML = `
+            <div class="estado-vazio">
+                Nenhum dado encontrado.
+            </div>
+        `;
+
+        return;
+
+    }
+
+
+    const bases =
+        obterBasesSelecionadasResumo();
+
+
+    if (
+        bases.length === 0
+    ) {
+
+        container.innerHTML = `
+            <div class="estado-vazio">
+                Nenhum dado encontrado para as bases selecionadas.
+            </div>
+        `;
+
+        return;
+
+    }
+
+
+    // ========================================================
+    // CRIAR TABELA
+    // ========================================================
+
+    const tabela =
+        document.createElement(
+            "table"
+        );
+
+
+    tabela.className =
+        "tabela-resumo";
+
+
+    tabela.innerHTML = `
+
+        <thead>
+
+            <tr>
+
+                <th>BASE</th>
+
+                <th>EQUIPES</th>
+
+                <th>FUNÇÃO</th>
+
+                <th>VAGAS</th>
+
+                <th>ALOCADOS</th>
+
+                <th>DIFERENÇA</th>
+
+            </tr>
+
+        </thead>
+
+        <tbody></tbody>
+
+    `;
+
+
+    const tbody =
+        tabela.querySelector(
+            "tbody"
+        );
+
+
+    // ========================================================
+    // RENDERIZAR BASES
+    // ========================================================
+
+    bases.forEach(
+        (base, indiceBase) => {
+
+            const funcoes =
+                Array.isArray(
+                    base.funcoes
+                )
+                    ? base.funcoes
+                    : [];
+
+
+            const grupos = [];
+
+
+            // =================================================
+            // AGRUPAR POR EQUIPE
+            // =================================================
+
+            funcoes.forEach(
+                item => {
+
+                    let grupo =
+                        grupos.find(
+                            g =>
+                                g.equipe ===
+                                item.equipe
+                        );
+
+
+                    if (!grupo) {
+
+                        grupo = {
+
+                            equipe:
+                                item.equipe,
+
+                            funcoes: []
+
+                        };
+
+
+                        grupos.push(
+                            grupo
+                        );
+
+                    }
+
+
+                    grupo.funcoes.push(
+                        item
+                    );
+
+                }
+            );
+
+
+            let primeiraLinhaBase =
+                true;
+
+
+            // =================================================
+            // EQUIPES
+            // =================================================
+
+            grupos.forEach(
+                grupo => {
+
+                    const quantidadeFuncoes =
+                        grupo.funcoes.length;
+
+
+                    grupo.funcoes.forEach(
+                        (
+                            item,
+                            indiceFuncao
+                        ) => {
+
+                            const tr =
+                                document.createElement(
+                                    "tr"
+                                );
+
+
+                            // =================================
+                            // BASE
+                            // =================================
+
+                            if (
+                                primeiraLinhaBase
+                            ) {
+
+                                const tdBase =
+                                    document.createElement(
+                                        "td"
+                                    );
+
+
+                                tdBase.className =
+                                    "celula-base";
+
+
+                                tdBase.textContent =
+                                    base.base ?? "";
+
+
+                                tdBase.rowSpan =
+                                    funcoes.length;
+
+
+                                tr.appendChild(
+                                    tdBase
+                                );
+
+
+                                primeiraLinhaBase =
+                                    false;
+
+                            }
+
+
+                            // =================================
+                            // EQUIPE
+                            // =================================
+
+                            if (
+                                indiceFuncao === 0
+                            ) {
+
+                                const tdEquipe =
+                                    document.createElement(
+                                        "td"
+                                    );
+
+
+                                tdEquipe.className =
+                                    "celula-equipe";
+
+
+                                tdEquipe.textContent =
+                                    grupo.equipe ?? "";
+
+
+                                tdEquipe.rowSpan =
+                                    quantidadeFuncoes;
+
+
+                                tr.appendChild(
+                                    tdEquipe
+                                );
+
+                            }
+
+
+                            // =================================
+                            // FUNÇÃO
+                            // =================================
+
+                            const tdFuncao =
+                                document.createElement(
+                                    "td"
+                                );
+
+
+                            tdFuncao.className =
+                                "celula-funcao";
+
+
+                            tdFuncao.textContent =
+                                item.funcao ?? "";
+
+
+                            tr.appendChild(
+                                tdFuncao
+                            );
+
+
+                            // =================================
+                            // VAGAS
+                            // =================================
+
+                            const tdVagas =
+                                document.createElement(
+                                    "td"
+                                );
+
+
+                            tdVagas.className =
+                                "celula-numero";
+
+
+                            tdVagas.textContent =
+                                item.vagas ?? 0;
+
+
+                            tr.appendChild(
+                                tdVagas
+                            );
+
+
+                            // =================================
+                            // ALOCADOS
+                            // =================================
+
+                            const tdAlocados =
+                                document.createElement(
+                                    "td"
+                                );
+
+
+                            tdAlocados.className =
+                                "celula-numero";
+
+
+                            tdAlocados.textContent =
+                                item.alocados ?? 0;
+
+
+                            tr.appendChild(
+                                tdAlocados
+                            );
+
+
+                            // =================================
+                            // DIFERENÇA
+                            // =================================
+
+                            const tdDiferenca =
+                                document.createElement(
+                                    "td"
+                                );
+
+
+                            tdDiferenca.className =
+                                "celula-numero";
+
+
+                            const diferenca =
+                                Number(
+                                    item.diferenca ?? 0
+                                );
+
+
+                            tdDiferenca.textContent =
+                                diferenca;
+
+
+                            if (
+                                diferenca > 0
+                            ) {
+
+                                tdDiferenca.classList.add(
+                                    "diferenca-positiva"
+                                );
+
+                            }
+
+                            else if (
+                                diferenca < 0
+                            ) {
+
+                                tdDiferenca.classList.add(
+                                    "diferenca-negativa"
+                                );
+
+                            }
+
+                            else {
+
+                                tdDiferenca.classList.add(
+                                    "diferenca-zero"
+                                );
+
+                            }
+
+
+                            tr.appendChild(
+                                tdDiferenca
+                            );
+
+
+                            tbody.appendChild(
+                                tr
+                            );
+
+                        }
+                    );
+
+                }
+            );
+
+
+            // =================================================
+            // SEPARADOR ENTRE BASES
+            // =================================================
+
+            if (
+                indiceBase <
+                bases.length - 1
+            ) {
+
+                const separador =
+                    document.createElement(
+                        "tr"
+                    );
+
+
+                separador.className =
+                    "separador-base";
+
+
+                separador.innerHTML = `
+                    <td colspan="6"></td>
+                `;
+
+
+                tbody.appendChild(
+                    separador
+                );
+
+            }
+
+        }
+    );
+
+
+    // ========================================================
+    // TOTAL GERAL POR FUNÇÃO
+    // ========================================================
+
+    const totaisFuncao = {};
+
+
+    bases.forEach(
+        base => {
+
+            (
+                Array.isArray(base.funcoes)
+                    ? base.funcoes
+                    : []
+            ).forEach(
+                item => {
+
+                    const funcao =
+                        String(
+                            item.funcao ??
+                            "OUTROS"
+                        )
+                            .trim() ||
+                        "OUTROS";
+
+
+                    if (
+                        !totaisFuncao[funcao]
+                    ) {
+
+                        totaisFuncao[funcao] = {
+
+                            vagas: 0,
+
+                            alocados: 0
+
+                        };
+
+                    }
+
+
+                    totaisFuncao[funcao].vagas +=
+                        Number(
+                            item.vagas ?? 0
+                        );
+
+
+                    totaisFuncao[funcao].alocados +=
+                        Number(
+                            item.alocados ?? 0
+                        );
+
+                }
+            );
+
+        }
+    );
+
+
+    // ========================================================
+    // SEPARADOR TOTAL
+    // ========================================================
+
+    const separadorTotal =
+        document.createElement(
+            "tr"
+        );
+
+
+    separadorTotal.className =
+        "separador-total";
+
+
+    separadorTotal.innerHTML = `
+        <td colspan="6"></td>
+    `;
+
+
+    tbody.appendChild(
+        separadorTotal
+    );
+
+
+    // ========================================================
+    // TÍTULO TOTAL GERAL POR FUNÇÃO
+    // ========================================================
+
+    const tituloTotal =
+        document.createElement(
+            "tr"
+        );
+
+
+    tituloTotal.className =
+        "linha-total-titulo";
+
+
+    tituloTotal.innerHTML = `
+        <td
+            colspan="6"
+            class="celula-titulo-total-geral"
+        >
+            TOTAL GERAL POR FUNÇÃO
+        </td>
+    `;
+
+
+    tbody.appendChild(
+        tituloTotal
+    );
+
+
+    // ========================================================
+    // ORDEM DAS FUNÇÕES
+    // ========================================================
+
+    const ordemFuncoes = {
+
+        "ENCARREGADO": 1,
+
+        "MOTORISTA": 2,
+
+        "ELETRICISTA": 3,
+
+        "AUXILIAR DE ELETRICISTA": 4
+
+    };
+
+
+    const funcoesTotais =
+        Object.entries(
+            totaisFuncao
+        ).sort(
+            (a, b) =>
+                (
+                    ordemFuncoes[a[0]] ??
+                    99
+                )
+                -
+                (
+                    ordemFuncoes[b[0]] ??
+                    99
+                )
+        );
+
+
+    // ========================================================
+    // LINHAS TOTAL
+    // ========================================================
+
+    funcoesTotais.forEach(
+        ([funcao, dados]) => {
+
+            const tr =
+                document.createElement(
+                    "tr"
+                );
+
+
+            tr.className =
+                "linha-total-funcao";
+
+
+            const diferenca =
+                dados.alocados -
+                dados.vagas;
+
+
+            let classeDiferenca;
+
+
+            if (
+                diferenca > 0
+            ) {
+
+                classeDiferenca =
+                    "diferenca-positiva";
+
+            }
+
+            else if (
+                diferenca < 0
+            ) {
+
+                classeDiferenca =
+                    "diferenca-negativa";
+
+            }
+
+            else {
+
+                classeDiferenca =
+                    "diferenca-zero";
+
+            }
+
+
+            // ================================================
+            // BASE
+            // ================================================
+
+            const tdBase =
+                document.createElement(
+                    "td"
+                );
+
+
+            tdBase.className =
+                "celula-total-vazia";
+
+
+            tdBase.textContent =
+                "";
+
+
+            // ================================================
+            // EQUIPE
+            // ================================================
+
+            const tdEquipe =
+                document.createElement(
+                    "td"
+                );
+
+
+            tdEquipe.className =
+                "celula-total-vazia";
+
+
+            tdEquipe.textContent =
+                "";
+
+
+            // ================================================
+            // FUNÇÃO
+            // ================================================
+
+            const tdFuncao =
+                document.createElement(
+                    "td"
+                );
+
+
+            tdFuncao.className =
+                "celula-funcao celula-total-funcao";
+
+
+            tdFuncao.textContent =
+                funcao;
+
+
+            // ================================================
+            // VAGAS
+            // ================================================
+
+            const tdVagas =
+                document.createElement(
+                    "td"
+                );
+
+
+            tdVagas.className =
+                "celula-numero celula-total-numero";
+
+
+            tdVagas.textContent =
+                dados.vagas;
+
+
+            // ================================================
+            // ALOCADOS
+            // ================================================
+
+            const tdAlocados =
+                document.createElement(
+                    "td"
+                );
+
+
+            tdAlocados.className =
+                "celula-numero celula-total-numero";
+
+
+            tdAlocados.textContent =
+                dados.alocados;
+
+
+            // ================================================
+            // DIFERENÇA
+            // ================================================
+
+            const tdDiferenca =
+                document.createElement(
+                    "td"
+                );
+
+
+            tdDiferenca.className =
+                `celula-numero celula-total-numero ${classeDiferenca}`;
+
+
+            tdDiferenca.textContent =
+                diferenca;
+
+
+            // ================================================
+            // ADICIONAR CÉLULAS
+            // ================================================
+
+            tr.appendChild(
+                tdBase
+            );
+
+
+            tr.appendChild(
+                tdEquipe
+            );
+
+
+            tr.appendChild(
+                tdFuncao
+            );
+
+
+            tr.appendChild(
+                tdVagas
+            );
+
+
+            tr.appendChild(
+                tdAlocados
+            );
+
+
+            tr.appendChild(
+                tdDiferenca
+            );
+
+
+            tbody.appendChild(
+                tr
+            );
+
+        }
+    );
+
+
+    // ========================================================
+    // INSERIR TABELA
+    // ========================================================
+
+    container.appendChild(
+        tabela
+    );
+
+}
+
+// ============================================================
+// RENDERIZAR TOTAL DE PESSOAS DISPONÍVEIS
+// ============================================================
+//
+// A tabela mostra a quantidade de pessoas ALOCADAS
+// por função e por base.
+//
+// Também possui uma coluna TOTAL GERAL,
+// que soma todas as bases selecionadas.
+//
+// ============================================================
+
+function renderizarPessoasDisponiveis() {
+
+    const container =
+        document.getElementById(
+            "tabelaDisponiveis"
+        );
+
+
+    if (!container) {
+
+        return;
+
+    }
+
+
+    container.innerHTML = "";
+
+
+    if (
+        !dadosResumo ||
+        !Array.isArray(
+            dadosResumo.bases
+        )
+    ) {
+
+        container.innerHTML = `
+            <div class="estado-vazio">
+                Nenhum dado encontrado.
+            </div>
+        `;
+
+        return;
+
+    }
+
+
+    // ========================================================
+    // BASES CONFORME FILTRO
+    // ========================================================
+
+    const bases =
+        obterBasesSelecionadasResumo();
+
+
+    if (
+        bases.length === 0
+    ) {
+
+        container.innerHTML = `
+            <div class="estado-vazio">
+                Nenhuma base selecionada.
+            </div>
+        `;
+
+        return;
+
+    }
+
+
+    // ========================================================
+    // FUNÇÕES
+    // ========================================================
+
+    const funcoesPadrao = [
+
+        "ENCARREGADO",
+
+        "ELETRICISTA",
+
+        "MOTORISTA",
+
+        "AUXILIAR DE ELETRICISTA"
+
+    ];
+
+
+    // ========================================================
+    // CRIAR TABELA
+    // ========================================================
+
+    const tabela =
+        document.createElement(
+            "table"
+        );
+
+
+    tabela.className =
+        "tabela-disponiveis";
+
+
+    // ========================================================
+    // CABEÇALHO
+    // ========================================================
+
+    const thead =
+        document.createElement(
+            "thead"
+        );
+
+
+    const trCabecalho =
+        document.createElement(
+            "tr"
+        );
+
+
+    // ========================================================
+    // CABEÇALHO - FUNÇÃO
+    // ========================================================
+
+    const thFuncao =
+        document.createElement(
+            "th"
+        );
+
+
+    thFuncao.className =
+        "th-funcao-disponiveis";
+
+
+    thFuncao.textContent =
+        "FUNÇÃO";
+
+
+    trCabecalho.appendChild(
+        thFuncao
+    );
+
+
+    // ========================================================
+    // DE/PARA DAS BASES
+    // ========================================================
+
+    const deParaBases = {
+
+        "BACABAL": "BCB",
+
+        "ITAPECURU": "ITM",
+
+        "SANTA INES": "STI",
+
+        "SPOT STI": "SPOT STI",
+
+        "PEDREIRAS": "PDS",
+
+        "PRES DUTRA": "PDT",
+
+        "BARRA DO CORDA": "BDC"
+
+    };
+
+
+    // ========================================================
+    // CABEÇALHOS DAS BASES
+    // ========================================================
+
+    bases.forEach(
+        base => {
+
+            const th =
+                document.createElement(
+                    "th"
+                );
+
+
+            th.className =
+                "th-base-disponiveis";
+
+
+            const baseOriginal =
+                String(
+                    base.base ?? ""
+                )
+                    .trim()
+                    .toUpperCase();
+
+
+            th.textContent =
+                deParaBases[baseOriginal] ??
+                base.base ??
+                "";
+
+
+            trCabecalho.appendChild(
+                th
+            );
+
+        }
+    );
+
+
+    // ========================================================
+    // CABEÇALHO TOTAL GERAL
+    // ========================================================
+
+    const thTotal =
+        document.createElement(
+            "th"
+        );
+
+
+    thTotal.className =
+        "th-total-geral";
+
+
+    thTotal.textContent =
+        "TOTAL GERAL";
+
+
+    trCabecalho.appendChild(
+        thTotal
+    );
+
+
+    thead.appendChild(
+        trCabecalho
+    );
+
+
+    tabela.appendChild(
+        thead
+    );
+
+
+    // ========================================================
+    // CORPO
+    // ========================================================
+
+    const tbody =
+        document.createElement(
+            "tbody"
+        );
+
+
+    // ========================================================
+    // VARIÁVEL PARA TOTAL GERAL DE TODAS AS FUNÇÕES
+    // ========================================================
+
+    const totalGeralPorFuncao = {};
+
+
+    funcoesPadrao.forEach(
+        funcao => {
+
+            totalGeralPorFuncao[funcao] =
+                0;
+
+        }
+    );
+
+
+    // ========================================================
+    // LINHAS DAS FUNÇÕES
+    // ========================================================
+
+    funcoesPadrao.forEach(
+        funcao => {
+
+            const tr =
+                document.createElement(
+                    "tr"
+                );
+
+
+            // ================================================
+            // FUNÇÃO
+            // ================================================
+
+            const tdFuncao =
+                document.createElement(
+                    "td"
+                );
+
+
+            tdFuncao.className =
+                "celula-funcao-disponiveis";
+
+
+            tdFuncao.textContent =
+                funcao;
+
+
+            tr.appendChild(
+                tdFuncao
+            );
+
+
+            // ================================================
+            // TOTAL DA FUNÇÃO
+            // ================================================
+
+            let totalFuncao =
+                0;
+
+
+            // ================================================
+            // CADA BASE
+            // ================================================
+
+            bases.forEach(
+                base => {
+
+                    const td =
+                        document.createElement(
+                            "td"
+                        );
+
+
+                    td.className =
+                        "celula-numero-disponiveis";
+
+
+                    let totalAlocados =
+                        0;
+
+
+                    const funcoes =
+                        Array.isArray(
+                            base.funcoes
+                        )
+                            ? base.funcoes
+                            : [];
+
+
+                    // =========================================
+                    // SOMAR ALOCADOS DA FUNÇÃO
+                    // =========================================
+
+                    funcoes.forEach(
+                        item => {
+
+                            const funcaoItem =
+                                String(
+                                    item.funcao ?? ""
+                                )
+                                    .trim()
+                                    .toUpperCase();
+
+
+                            const funcaoAtual =
+                                funcao
+                                    .trim()
+                                    .toUpperCase();
+
+
+                            if (
+                                funcaoItem ===
+                                funcaoAtual
+                            ) {
+
+                                totalAlocados +=
+                                    Number(
+                                        item.alocados ?? 0
+                                    );
+
+                            }
+
+                        }
+                    );
+
+
+                    // =========================================
+                    // TOTAL DA FUNÇÃO
+                    // =========================================
+
+                    totalFuncao +=
+                        totalAlocados;
+
+
+                    td.textContent =
+                        totalAlocados;
+
+
+                    tr.appendChild(
+                        td
+                    );
+
+                }
+            );
+
+
+            // ================================================
+            // TOTAL GERAL DA FUNÇÃO
+            // ================================================
+
+            totalGeralPorFuncao[funcao] =
+                totalFuncao;
+
+
+            const tdTotal =
+                document.createElement(
+                    "td"
+                );
+
+
+            tdTotal.className =
+                "celula-total-geral";
+
+
+            tdTotal.textContent =
+                totalFuncao;
+
+
+            tr.appendChild(
+                tdTotal
+            );
+
+
+            tbody.appendChild(
+                tr
+            );
+
+        }
+    );
+
+
+    // ========================================================
+    // LINHA FINAL - TOTAL GERAL
+    // ========================================================
+
+    const trTotalGeral =
+        document.createElement(
+            "tr"
+        );
+
+
+    trTotalGeral.className =
+        "linha-total-geral";
+
+
+    // ========================================================
+    // CÉLULA - TÍTULO
+    // ========================================================
+
+    const tdTituloTotal =
+        document.createElement(
+            "td"
+        );
+
+
+    tdTituloTotal.className =
+        "td-titulo-total-geral";
+
+
+    tdTituloTotal.textContent =
+        "TOTAL GERAL";
+
+
+    trTotalGeral.appendChild(
+        tdTituloTotal
+    );
+
+
+    // ========================================================
+    // TOTAIS POR BASE
+    // ========================================================
+
+    let totalAbsoluto =
+        0;
+
+
+    bases.forEach(
+        base => {
+
+            const td =
+                document.createElement(
+                    "td"
+                );
+
+
+            td.className =
+                "celula-total-geral";
+
+
+            let totalBase =
+                0;
+
+
+            const funcoes =
+                Array.isArray(
+                    base.funcoes
+                )
+                    ? base.funcoes
+                    : [];
+
+
+            funcoes.forEach(
+                item => {
+
+                    totalBase +=
+                        Number(
+                            item.alocados ?? 0
+                        );
+
+                }
+            );
+
+
+            totalAbsoluto +=
+                totalBase;
+
+
+            td.textContent =
+                totalBase;
+
+
+            trTotalGeral.appendChild(
+                td
+            );
+
+        }
+    );
+
+
+    // ========================================================
+    // TOTAL ABSOLUTO
+    // ========================================================
+
+    const tdTotalAbsoluto =
+        document.createElement(
+            "td"
+        );
+
+
+    tdTotalAbsoluto.className =
+        "celula-total-geral total-absoluto";
+
+
+    tdTotalAbsoluto.textContent =
+        totalAbsoluto;
+
+
+    trTotalGeral.appendChild(
+        tdTotalAbsoluto
+    );
+
+
+    tbody.appendChild(
+        trTotalGeral
+    );
+
+
+    tabela.appendChild(
+        tbody
+    );
+
+
+    // ========================================================
+    // INSERIR
+    // ========================================================
+
+    container.appendChild(
+        tabela
+    );
+
+}
+
+
+// ============================================================
+// INICIALIZAÇÃO
+// ============================================================
+
+document.addEventListener(
+    "DOMContentLoaded",
+    () => {
+
+        carregarResumo();
+
+    }
+);
+
+
+</script>
+
+
+</body>
+
+</html>

@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>Gerenciador de Equipes</title>
+
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', filename='css/style.css') }}"
+    >
+
+</head>
+
+<body>
+
+<div class="app">
+
+    <!-- =========================================================
+         TOPO
+         ========================================================= -->
+
+    <header class="topbar">
+
+        <div class="topbar-title">
+
+            <div>
+                Gerenciador de Equipes
+            </div>
+
+            <!-- =================================================
+                 FILTRO DE BASE
+                 ================================================= -->
+
+            <div
+                id="dropdownFiltroBase"
+                class="dropdown-base"
+            >
+
+                <button
+                    type="button"
+                    id="btnFiltroBase"
+                    class="filtro-base"
+                    onclick="toggleFiltroBase()"
+                >
+
+                    <span id="textoFiltroBase">
+                        SELECIONAR TODOS
+                    </span>
+
+                    <span class="seta-dropdown">
+                        ▼
+                    </span>
+
+                </button>
+
+
+                <div
+                    id="opcoesFiltroBase"
+                    class="opcoes-filtro-base"
+                >
+
+                    <!--
+                        As opções serão criadas
+                        dinamicamente pelo app.js.
+                    -->
+
+                </div>
+
+            </div>
+
+        </div>
+
+
+        <!-- =====================================================
+             AÇÕES DO TOPO
+             ===================================================== -->
+
+        <div class="topbar-actions">
+
+            <button
+                id="btnAtualizar"
+                type="button"
+                class="btn btn-primary"
+                onclick="carregarDados()"
+            >
+                ↻ ATUALIZAR
+            </button>
+
+
+            <button
+                type="button"
+                class="btn btn-primary"
+                onclick="window.location.href='/resumo'"
+            >
+                RESUMO
+            </button>
+
+        </div>
+
+    </header>
+
+
+    <!-- =========================================================
+         CONTEÚDO PRINCIPAL
+         ========================================================= -->
+
+    <main class="main-content banco-dados-content">
+
+
+        <!-- =====================================================
+             EQUIPES
+             ===================================================== -->
+
+        <section class="panel">
+
+            <div class="panel-header">
+
+                <div class="panel-title">
+                    Equipes
+                </div>
+
+            </div>
+
+
+            <div
+                id="listaEquipes"
+                class="teams-container"
+            >
+
+                <div class="estado-carregando">
+                    Carregando equipes...
+                </div>
+
+            </div>
+
+        </section>
+
+
+        <!-- =====================================================
+             COLABORADORES
+             ===================================================== -->
+
+        <section class="panel">
+
+            <div class="panel-header">
+
+                <div class="panel-title">
+                    Colaboradores
+                </div>
+
+            </div>
+
+
+            <!-- =================================================
+                 PESQUISA DE COLABORADORES
+                 ================================================= -->
+
+            <div class="search-container">
+
+                <input
+                    id="pesquisa"
+                    class="search-input"
+                    type="text"
+                    placeholder="Pesquisar por matrícula ou nome..."
+                    oninput="filtrarColaboradores()"
+                >
+
+            </div>
+
+
+            <div
+                id="listaColaboradores"
+                class="employees-container"
+            >
+
+                <div class="estado-carregando">
+                    Carregando colaboradores...
+                </div>
+
+            </div>
+
+        </section>
+
+
+    </main>
+
+</div>
+
+
+<!-- =============================================================
+     MODAL DE ALOCAÇÃO
+     ============================================================= -->
+
+<div
+    id="modalAlocacao"
+    class="modal-overlay"
+    style="display: none;"
+>
+
+    <div class="modal-alocacao">
+
+
+        <!-- =====================================================
+             CABEÇALHO DO MODAL
+             ===================================================== -->
+
+        <div class="modal-header">
+
+            <div class="modal-title">
+                Alocar colaborador
+            </div>
+
+
+            <button
+                type="button"
+                class="modal-fechar"
+                onclick="fecharModalAlocacao()"
+            >
+                ×
+            </button>
+
+        </div>
+
+
+        <!-- =====================================================
+             COLABORADOR
+             ===================================================== -->
+
+        <div class="modal-colaborador">
+
+            <div class="modal-label">
+                COLABORADOR
+            </div>
+
+
+            <div
+                id="modalColaborador"
+                class="modal-colaborador-info"
+            >
+                -
+            </div>
+
+        </div>
+
+
+        <!-- =====================================================
+             BASE
+             ===================================================== -->
+
+        <div class="modal-campo">
+
+            <label for="modalBase">
+                BASE
+            </label>
+
+
+            <select
+                id="modalBase"
+                onchange="carregarEquipesModal()"
+            >
+
+                <option value="">
+                    SELECIONE A BASE
+                </option>
+
+            </select>
+
+        </div>
+
+
+        <!-- =====================================================
+             EQUIPE
+             ===================================================== -->
+
+        <div class="modal-campo">
+
+            <label for="modalEquipe">
+                EQUIPE
+            </label>
+
+
+            <select
+                id="modalEquipe"
+                onchange="carregarVagasModal()"
+                disabled
+            >
+
+                <option value="">
+                    SELECIONE A EQUIPE
+                </option>
+
+            </select>
+
+        </div>
+
+
+        <!-- =====================================================
+             VAGA
+             ===================================================== -->
+
+        <div class="modal-campo">
+
+            <label for="modalVaga">
+                VAGA
+            </label>
+
+
+            <select
+                id="modalVaga"
+                disabled
+            >
+
+                <option value="">
+                    SELECIONE A VAGA
+                </option>
+
+            </select>
+
+        </div>
+
+
+        <!-- =====================================================
+             AÇÕES
+             ===================================================== -->
+
+        <div class="modal-acoes">
+
+            <button
+                type="button"
+                class="btn btn-secondary"
+                onclick="fecharModalAlocacao()"
+            >
+                CANCELAR
+            </button>
+
+
+            <button
+                type="button"
+                class="btn btn-primary"
+                onclick="confirmarAlocacaoModal()"
+            >
+                CONFIRMAR ALOCAÇÃO
+            </button>
+
+        </div>
+
+    </div>
+
+</div>
+
+
+<!-- =============================================================
+     JAVASCRIPT
+     ============================================================= -->
+
+<script
+    src="{{ url_for('static', filename='js/app.js') }}"
+></script>
+
+
+</body>
+
+</html>
