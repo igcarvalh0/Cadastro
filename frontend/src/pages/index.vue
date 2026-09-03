@@ -1,15 +1,34 @@
 <template>
   <q-layout view="lHh Lpr lFf">
-    <q-header elevated class="bg-primary text-white">
+    <q-header elevated class="site-header text-white">
       <q-toolbar>
+        <div class="site-logo q-mr-sm">
+          <img src="/icons/favicon-128x128.png" alt="Logo" />
+        </div>
+
         <q-toolbar-title> Gerenciador de Equipes </q-toolbar-title>
+
+        <q-btn
+          flat
+          round
+          dense
+          :icon="modoNoturno ? 'light_mode' : 'dark_mode'"
+          :aria-label="
+            modoNoturno ? 'Ativar modo claro' : 'Ativar modo noturno'
+          "
+          @click="alternarModoNoturno"
+        >
+          <q-tooltip>{{
+            modoNoturno ? 'Modo claro' : 'Modo noturno'
+          }}</q-tooltip>
+        </q-btn>
 
         <q-btn flat label="Resumo" @click="irParaResumo" />
       </q-toolbar>
     </q-header>
 
     <q-page-container>
-      <q-page class="q-pa-md">
+      <q-page class="q-pa-md banco-page">
         <!-- ================================================== -->
         <!-- CABEÇALHO -->
         <!-- ================================================== -->
@@ -101,7 +120,7 @@
 
           <div class="col-12 col-lg-8">
             <q-card bordered>
-              <q-card-section>
+              <q-card-section class="text-center">
                 <div class="text-h6"> Equipes </div>
               </q-card-section>
 
@@ -114,6 +133,12 @@
                   expand-separator
                   :label="equipe.prefixo || 'Equipe'"
                   :caption="equipe.base || ''"
+                  header-class="equipe-header"
+                  expand-icon="fiber_manual_record"
+                  expanded-icon="fiber_manual_record"
+                  :expand-icon-class="
+                    equipePreenchida(equipe) ? 'text-positive' : 'text-negative'
+                  "
                 >
                   <q-card flat>
                     <q-card-section>
@@ -134,7 +159,7 @@
                       <div
                         v-for="vaga in equipe.vagas"
                         :key="vaga.id"
-                        class="row items-center q-py-sm"
+                        class="row items-center text-center q-py-sm"
                       >
                         <div class="col-12 col-sm-2 text-caption">
                           {{ vaga.colaborador?.chapa || '-' }}
@@ -153,7 +178,7 @@
                         </div>
 
                         <div
-                          class="col-12 col-sm-3 flex justify-end items-center"
+                          class="col-12 col-sm-3 flex justify-center items-center"
                         >
                           <q-chip
                             v-if="vaga.colaborador"
@@ -211,7 +236,7 @@
 
           <div class="col-12 col-lg-4">
             <q-card bordered>
-              <q-card-section>
+              <q-card-section class="text-center">
                 <div class="text-h6"> Colaboradores </div>
               </q-card-section>
 
@@ -275,13 +300,9 @@
                     :disable="colaborador.alocado"
                     @click="selecionarColaborador(colaborador)"
                   >
-                    <q-item-section>
+                    <q-item-section class="text-center">
                       <q-item-label>
                         {{ colaborador.nome }}
-                      </q-item-label>
-
-                      <q-item-label caption>
-                        CHAPA: {{ colaborador.chapa }}
                       </q-item-label>
 
                       <q-item-label caption>
@@ -293,7 +314,7 @@
                       </q-item-label>
                     </q-item-section>
 
-                    <q-item-section side>
+                    <q-item-section side class="text-center">
                       <q-chip
                         v-if="colaborador.alocado"
                         color="positive"
@@ -424,6 +445,7 @@
 
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
+import { Dark } from 'quasar'
 
 import { useRouter } from 'vue-router'
 
@@ -440,6 +462,8 @@ const colaboradores = ref([])
 const carregando = ref(false)
 
 const erro = ref('')
+
+const modoNoturno = ref(Dark.isActive)
 
 const baseSelecionada = ref([])
 
@@ -531,6 +555,21 @@ function normalizarSelecaoBases(bases) {
   return valores
 }
 
+function equipePreenchida(equipe) {
+  const vagas = equipe.vagas || []
+
+  return vagas.length > 0 && vagas.every(vaga => Boolean(vaga.colaborador))
+}
+
+function alternarModoNoturno() {
+  modoNoturno.value = !modoNoturno.value
+  Dark.set(modoNoturno.value)
+  localStorage.setItem(
+    'gerenciadorEquipes_modoNoturno',
+    String(modoNoturno.value)
+  )
+}
+
 function atualizarSelecaoBases(bases) {
   const selecao = Array.isArray(bases) ? bases : []
 
@@ -562,8 +601,9 @@ const opcoesBases = computed(() => {
     }
 
     if (!bases.some(item => item.value === base)) {
+      const codigo = CODIGOS_BASES[base]
       bases.push({
-        label: base,
+        label: codigo ? `${base} (${codigo})` : base,
         value: base
       })
     }
@@ -581,17 +621,34 @@ const opcoesBases = computed(() => {
 // ============================================================
 
 const equipesFiltradas = computed(() => {
-  if (!baseSelecionada.value.length) {
-    return equipes.value
-  }
+  const equipesVisiveis =
+    !baseSelecionada.value.length ||
+    baseSelecionada.value.includes(OPCAO_TODAS_BASES)
+      ? equipes.value
+      : equipes.value.filter(equipe => {
+          const base = String(equipe.base || '').trim()
+          return baseSelecionada.value.includes(base)
+        })
 
-  if (baseSelecionada.value.includes(OPCAO_TODAS_BASES)) {
-    return equipes.value
-  }
+  return [...equipesVisiveis].sort((a, b) => {
+    const baseA = String(a.base || '').trim()
+    const baseB = String(b.base || '').trim()
+    const comparacaoBase = baseA.localeCompare(baseB, 'pt-BR')
 
-  return equipes.value.filter(equipe => {
-    const base = String(equipe.base || '').trim()
-    return baseSelecionada.value.includes(base)
+    if (comparacaoBase !== 0) {
+      return comparacaoBase
+    }
+
+    const prefixoA = String(a.prefixo || '').trim()
+    const prefixoB = String(b.prefixo || '').trim()
+    const tipoA = prefixoA.toUpperCase() === 'FOLGUISTA' ? 1 : 0
+    const tipoB = prefixoB.toUpperCase() === 'FOLGUISTA' ? 1 : 0
+
+    if (tipoA !== tipoB) {
+      return tipoA - tipoB
+    }
+
+    return prefixoA.localeCompare(prefixoB, 'pt-BR')
   })
 })
 
@@ -599,23 +656,31 @@ const equipesFiltradas = computed(() => {
 // COLABORADORES FILTRADOS
 // ============================================================
 
+const colaboradoresBase = computed(() => {
+  if (
+    !baseSelecionada.value.length ||
+    baseSelecionada.value.includes(OPCAO_TODAS_BASES)
+  ) {
+    return colaboradores.value
+  }
+
+  return colaboradores.value.filter(colaborador =>
+    baseSelecionada.value.some(
+      base =>
+        base === colaborador.base ||
+        CODIGOS_BASES[base] === colaborador.codigo_base
+    )
+  )
+})
+
 const colaboradoresFiltrados = computed(() => {
   const filtro = filtroColaborador.value.trim().toLowerCase()
 
-  return colaboradores.value.filter(colaborador => {
+  return colaboradoresBase.value.filter(colaborador => {
     const correspondeStatus =
       statusColaborador.value === 'TODOS' ||
       (statusColaborador.value === 'ALOCADOS' && colaborador.alocado) ||
       (statusColaborador.value === 'LIVRES' && !colaborador.alocado)
-
-    const correspondeBase =
-      !baseSelecionada.value.length ||
-      baseSelecionada.value.includes(OPCAO_TODAS_BASES) ||
-      baseSelecionada.value.some(
-        base =>
-          base === colaborador.base ||
-          CODIGOS_BASES[base] === colaborador.codigo_base
-      )
 
     const correspondeTexto =
       !filtro ||
@@ -629,7 +694,7 @@ const colaboradoresFiltrados = computed(() => {
         .toLowerCase()
         .includes(filtro)
 
-    return correspondeStatus && correspondeBase && correspondeTexto
+    return correspondeStatus && correspondeTexto
   })
 })
 
@@ -638,11 +703,13 @@ const colaboradoresFiltrados = computed(() => {
 // ============================================================
 
 const colaboradoresAlocados = computed(() => {
-  return colaboradores.value.filter(colaborador => colaborador.alocado).length
+  return colaboradoresBase.value.filter(colaborador => colaborador.alocado)
+    .length
 })
 
 const colaboradoresLivres = computed(() => {
-  return colaboradores.value.filter(colaborador => !colaborador.alocado).length
+  return colaboradoresBase.value.filter(colaborador => !colaborador.alocado)
+    .length
 })
 
 // ============================================================
@@ -914,6 +981,13 @@ async function removerColaborador(composicaoId) {
 // ============================================================
 
 onMounted(() => {
+  const modoSalvo = localStorage.getItem('gerenciadorEquipes_modoNoturno')
+
+  if (modoSalvo !== null) {
+    modoNoturno.value = modoSalvo === 'true'
+    Dark.set(modoNoturno.value)
+  }
+
   carregarDados().then(() => {
     try {
       const filtroSalvo = JSON.parse(
@@ -921,15 +995,22 @@ onMounted(() => {
       )
 
       if (Array.isArray(filtroSalvo)) {
-        const basesExistentes = opcoesBases.value.map(opcao => opcao.value)
-        baseSelecionada.value = normalizarSelecaoBases(
-          filtroSalvo.filter(
+        if (filtroSalvo.length === 0) {
+          baseSelecionada.value = [OPCAO_TODAS_BASES]
+        } else {
+          const basesExistentes = opcoesBases.value.map(opcao => opcao.value)
+          const validas = filtroSalvo.filter(
             base => basesExistentes.includes(base) || base === OPCAO_TODAS_BASES
           )
-        )
+          baseSelecionada.value = validas.length
+            ? normalizarSelecaoBases(validas)
+            : [OPCAO_TODAS_BASES]
+        }
+      } else {
+        baseSelecionada.value = [OPCAO_TODAS_BASES]
       }
     } catch {
-      baseSelecionada.value = []
+      baseSelecionada.value = [OPCAO_TODAS_BASES]
     }
   })
 })
@@ -952,3 +1033,26 @@ watch(
   { deep: true }
 )
 </script>
+
+<style scoped>
+.site-header {
+  background: #711424 !important;
+}
+
+.banco-page :deep(.q-list .q-item__section--main) {
+  text-align: center;
+}
+
+.banco-page :deep(.equipe-header .q-item__section--main) {
+  align-items: flex-start !important;
+  justify-content: flex-start !important;
+  text-align: left !important;
+  width: 100%;
+}
+
+.banco-page :deep(.equipe-header .q-item__label) {
+  display: block;
+  width: 100%;
+  text-align: left !important;
+}
+</style>

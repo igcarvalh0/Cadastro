@@ -1,10 +1,11 @@
 import pandas as pd
+from pathlib import Path
 
 from database.database import SessionLocal
 from database.models import Colaborador, Rateio
 
 
-ARQUIVO_EXCEL = "database/importacao/cadastro.xlsx"
+ARQUIVO_EXCEL = Path(__file__).resolve().parent / "cadastro.xlsx"
 
 
 def importar_colaboradores():

@@ -1,1 +1,117 @@
-// app global css
+body {
+  background: #f5f1f2;
+  color: #2d2527;
+  font-family: 'Trebuchet MS', 'Segoe UI', sans-serif;
+}
+
+body.body--dark {
+  background: #1d191a;
+  color: #f1e9ea;
+}
+
+.q-header .q-toolbar {
+  min-height: 58px;
+  padding-left: 18px;
+  padding-right: 18px;
+}
+
+.q-toolbar__title {
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.site-logo {
+  width: 88px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  flex: 0 0 auto;
+}
+
+.site-logo img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: left center;
+}
+
+.text-h5,
+.text-h6 {
+  color: #4f1723;
+  font-weight: 700;
+}
+
+.body--dark .text-h5,
+.body--dark .text-h6 {
+  color: #f4dfe3;
+}
+
+.body--dark .text-grey-7,
+.body--dark .text-grey-8,
+.body--dark .text-grey-9,
+.body--dark .text-caption,
+.body--dark .text-subtitle2 {
+  color: #d8c8cb !important;
+}
+
+.body--dark .q-card,
+.body--dark .q-item,
+.body--dark .q-field__control,
+.body--dark .q-field__native,
+.body--dark .q-field__label,
+.body--dark .q-table {
+  color: #f1e9ea;
+}
+
+.body--dark .bg-blue-1 {
+  background: #3a2830 !important;
+}
+
+.body--dark .bg-orange-1 {
+  background: #49372b !important;
+}
+
+.body--dark .bg-green-1 {
+  background: #203c35 !important;
+}
+
+.body--dark .bg-red-1 {
+  background: #48272d !important;
+}
+
+.body--dark .bg-grey-2 {
+  background: #302b2d !important;
+}
+
+.q-page {
+  background: transparent;
+}
+
+.q-card {
+  border-radius: 10px;
+  border-color: rgba(113, 20, 36, 0.18);
+  box-shadow: 0 8px 24px rgba(65, 32, 38, 0.06);
+}
+
+.q-separator {
+  opacity: 0.55;
+}
+
+.body--dark .q-card {
+  border-color: rgba(212, 154, 85, 0.2);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+}
+
+.q-btn {
+  border-radius: 7px;
+}
+
+.q-table thead tr {
+  background: #711424;
+}
+
+.q-table thead th {
+  color: #fff;
+  font-weight: 700;
+}

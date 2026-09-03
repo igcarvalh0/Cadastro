@@ -48,6 +48,9 @@ class Rateio(Base):
 
 class Equipe(Base):
     __tablename__ = "equipes"
+    __table_args__ = (
+        UniqueConstraint("BASE", "PREFIXO", name="uq_equipes_base_prefixo"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
 
@@ -106,15 +109,13 @@ class MembroEquipe(Base):
     composicao_id = Column(
         Integer,
         ForeignKey("composicoes_equipes.id"),
-        nullable=False,
-        unique=True
+        nullable=False
     )
 
     CHAPA = Column(
         String,
         ForeignKey("colaboradores.CHAPA"),
-        nullable=False,
-        unique=True
+        nullable=False
     )
 
     composicao = relationship(

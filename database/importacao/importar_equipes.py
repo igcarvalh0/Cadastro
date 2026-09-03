@@ -1,10 +1,11 @@
 import pandas as pd
+from pathlib import Path
 
 from database.database import SessionLocal
 from database.models import Equipe, ComposicaoEquipe
 
 
-ARQUIVO_EXCEL = "database/importacao/equipes.xlsx"
+ARQUIVO_EXCEL = Path(__file__).resolve().parent / "equipes.xlsx"
 
 
 def importar_equipes():

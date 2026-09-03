@@ -31,6 +31,7 @@ SessionLocal = sessionmaker(
 )
 
 
-Base.metadata.create_all(bind=engine)
+if os.getenv("AUTO_CREATE_SCHEMA", "false").lower() == "true":
+    Base.metadata.create_all(bind=engine)
 
 print("Banco de dados conectado com sucesso!")

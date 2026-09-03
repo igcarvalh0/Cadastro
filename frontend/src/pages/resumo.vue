@@ -1,10 +1,29 @@
 <template>
   <q-layout view="lHh Lpr lFf">
-    <q-header elevated class="bg-primary text-white">
+    <q-header elevated class="site-header text-white">
       <q-toolbar>
         <q-btn flat round dense icon="arrow_back" @click="voltar" />
 
+        <div class="site-logo q-mr-sm">
+          <img src="/icons/favicon-128x128.png" alt="Logo" />
+        </div>
+
         <q-toolbar-title> Resumo </q-toolbar-title>
+
+        <q-btn
+          flat
+          round
+          dense
+          :icon="modoNoturno ? 'light_mode' : 'dark_mode'"
+          :aria-label="
+            modoNoturno ? 'Ativar modo claro' : 'Ativar modo noturno'
+          "
+          @click="alternarModoNoturno"
+        >
+          <q-tooltip>{{
+            modoNoturno ? 'Modo claro' : 'Modo noturno'
+          }}</q-tooltip>
+        </q-btn>
 
         <q-btn flat label="Banco de Dados" @click="irParaBanco" />
       </q-toolbar>
@@ -547,6 +566,7 @@
 
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
+import { Dark } from 'quasar'
 
 import { useRouter } from 'vue-router'
 
@@ -579,6 +599,8 @@ const baseSelecionada = ref([])
 const carregando = ref(false)
 
 const erro = ref('')
+
+const modoNoturno = ref(Dark.isActive)
 
 const pessoasDisponiveis = ref([])
 
@@ -675,7 +697,10 @@ const opcoesBases = computed(() => {
 })
 
 const basesExibidas = computed(() => {
-  if (!baseSelecionada.value.length) {
+  if (
+    !baseSelecionada.value.length ||
+    baseSelecionada.value.includes('__TODAS_BASES__')
+  ) {
     return bases.value
   }
 
@@ -720,11 +745,19 @@ function funcaoResumo(funcao) {
     .trim()
     .toUpperCase()
 
-  if (valor === 'MUNQUEIRO/MOTORISTA') {
+  if (valor === 'ENCARREGADO') {
+    return 'ENCARREGADO'
+  }
+
+  if (valor === 'ELETRICISTA') {
+    return 'ELETRICISTA'
+  }
+
+  if (valor === 'MUNQUEIRO/MOTORISTA' || valor === 'MOTORISTA') {
     return 'MOTORISTA'
   }
 
-  if (valor === 'AUXILIAR ELETRICISTA') {
+  if (valor === 'AUXILIAR ELETRICISTA' || valor === 'AUXILIAR DE ELETRICISTA') {
     return 'AUXILIAR DE ELETRICISTA'
   }
 
@@ -1194,11 +1227,27 @@ function irParaBanco() {
   router.push('/')
 }
 
+function alternarModoNoturno() {
+  modoNoturno.value = !modoNoturno.value
+  Dark.set(modoNoturno.value)
+  localStorage.setItem(
+    'gerenciadorEquipes_modoNoturno',
+    String(modoNoturno.value)
+  )
+}
+
 // ============================================================
 // INICIALIZAÇÃO
 // ============================================================
 
 onMounted(() => {
+  const modoSalvo = localStorage.getItem('gerenciadorEquipes_modoNoturno')
+
+  if (modoSalvo !== null) {
+    modoNoturno.value = modoSalvo === 'true'
+    Dark.set(modoNoturno.value)
+  }
+
   carregarResumo().then(() => {
     try {
       const filtroSalvo = JSON.parse(
@@ -1222,7 +1271,7 @@ watch(
   bases => {
     localStorage.setItem(
       'gerenciadorEquipes_basesSelecionadas',
-      JSON.stringify(bases)
+      JSON.stringify(bases.length ? bases : ['__TODAS_BASES__'])
     )
   },
   { deep: true }
@@ -1230,6 +1279,18 @@ watch(
 </script>
 
 <style scoped>
+.site-header {
+  background: #711424 !important;
+}
+
+.resumo-page :deep(.q-table thead tr),
+.resumo-page :deep(.q-table thead th) {
+  background: #711424 !important;
+  color: #fff !important;
+  font-weight: 700;
+  text-align: center !important;
+}
+
 .resumo-page {
   font-size: 95%;
 }
