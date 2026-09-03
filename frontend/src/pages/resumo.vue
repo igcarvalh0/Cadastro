@@ -304,7 +304,7 @@
                           {{
                             indicador.diferenca < 0 ? 'Déficit' : 'Superávit'
                           }}:
-                          {{ Math.abs(indicador.diferenca) }}
+                          {{ indicador.diferenca }}
                         </div>
                       </q-card-section>
                     </q-card>

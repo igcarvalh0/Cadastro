@@ -68,6 +68,38 @@ body.body--dark {
   color: #f1e9ea;
 }
 
+// O Quasar colore os textos secundarios de QItemLabel (caption/overline/header)
+// com color-mix(in srgb, currentColor N%, transparent). Alguns navegadores nao
+// repintam esse valor quando so a cor herdada do body muda ao trocar de tema,
+// deixando o texto com a cor do tema anterior ate outra atualizacao da tela
+// forcar o recalculo. Fixamos aqui uma cor explicita por tema para evitar
+// depender do currentColor dinamico.
+.q-item__label--caption,
+.q-item__label--header,
+.q-item__section--side:not(.q-item__section--avatar) {
+  color: rgba(45, 37, 39, 0.54);
+}
+
+.q-item__label--overline {
+  color: rgba(45, 37, 39, 0.7);
+}
+
+.body--dark .q-item__label--caption {
+  color: rgba(241, 233, 234, 0.8);
+}
+
+.body--dark .q-item__label--header {
+  color: rgba(241, 233, 234, 0.64);
+}
+
+.body--dark .q-item__section--side:not(.q-item__section--avatar) {
+  color: rgba(241, 233, 234, 0.7);
+}
+
+.body--dark .q-item__label--overline {
+  color: rgba(241, 233, 234, 0.7);
+}
+
 .body--dark .bg-blue-1 {
   background: #3a2830 !important;
 }
