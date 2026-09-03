@@ -1,4 +1,6 @@
-from flask import Flask, render_template, jsonify, request
+from pathlib import Path
+
+from flask import Flask, render_template, jsonify, request, redirect, send_from_directory
 from sqlalchemy.orm import joinedload
 
 from database.database import SessionLocal
@@ -11,6 +13,67 @@ from database.models import (
 
 
 app = Flask(__name__)
+
+
+PROJECT_DIR = Path(__file__).resolve().parent
+FRONTEND_DIST_DIR = PROJECT_DIR / "frontend" / "dist" / "spa"
+
+
+def frontend_compilado():
+
+    return (
+        FRONTEND_DIST_DIR
+        / "index.html"
+    ).is_file()
+
+
+def servir_frontend():
+
+    resposta = send_from_directory(
+        FRONTEND_DIST_DIR,
+        "index.html"
+    )
+
+    resposta.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+
+    return resposta
+
+
+@app.route(
+    "/assets/<path:arquivo>"
+)
+def servir_assets_frontend(arquivo):
+
+    resposta = send_from_directory(
+        FRONTEND_DIST_DIR / "assets",
+        arquivo
+    )
+
+    resposta.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+
+    return resposta
+
+
+@app.route(
+    "/icons/<path:arquivo>"
+)
+def servir_icones_frontend(arquivo):
+
+    return send_from_directory(
+        FRONTEND_DIST_DIR / "icons",
+        arquivo
+    )
+
+
+@app.route(
+    "/favicon.ico"
+)
+def servir_favicon_frontend():
+
+    return send_from_directory(
+        FRONTEND_DIST_DIR,
+        "favicon.ico"
+    )
 
 
 # ============================================================
@@ -36,12 +99,66 @@ DE_PARA_BASES = {
 }
 
 
+DE_PARA_SECOES = {
+
+    "CT 127 - SETOR ADMINISTRATIVO": "BACABAL",
+
+    "CT 127 - SETOR BACABAL": "BACABAL",
+
+    "CT 169 - SETOR BACABAL": "BACABAL",
+
+    "CT 169 - SETOR PRESIDENTE DUTRA": "PRESIDENTE DUTRA",
+
+    "CT 127 - SETOR DE ITAPECURU MIRIM": "ITAPECURU MIRIM",
+
+    "CT 127 - SETOR SANTA INES": "SANTA INES",
+
+    "CT 169 - SETOR DE BARRA DO CORDA": "BARRA DO CORDA",
+
+    "CT 169- SETOR PEDREIRAS": "PEDREIRAS",
+
+    "CT 170 - SETOR SANTA INES": "SANTA INES",
+
+    "CT 170 - SETOR DE BARRA DO CORDA": "BARRA DO CORDA",
+
+    "CT 127 - SETOR DE FROTA": "BACABAL",
+
+    "CT 169 - SETOR SANTA INES": "SANTA INES",
+
+    "CT 169 - SETOR DE ITAPECURU MIRIM": "ITAPECURU MIRIM",
+
+    "BACABAL": "BACABAL",
+
+    "ITAPECURU": "ITAPECURU MIRIM",
+
+    "ITAPECURU MIRIM": "ITAPECURU MIRIM",
+
+    "SANTA INES": "SANTA INES",
+
+    "SPOT STI": "SPOT STI",
+
+    "PEDREIRAS": "PEDREIRAS",
+
+    "PRES DUTRA": "PRESIDENTE DUTRA",
+
+    "PRESIDENTE DUTRA": "PRESIDENTE DUTRA",
+
+    "BARRA DO CORDA": "BARRA DO CORDA"
+
+}
+
+
 # ============================================================
 # PÁGINA PRINCIPAL
 # ============================================================
 
 @app.route("/")
 def index():
+
+    if frontend_compilado():
+
+        return servir_frontend()
+
 
     return render_template(
         "banco_dados.html"
@@ -54,6 +171,13 @@ def index():
 
 @app.route("/resumo")
 def resumo():
+
+    if frontend_compilado():
+
+        return redirect(
+            "/#/resumo"
+        )
+
 
     return render_template(
         "resumo.html"
@@ -540,7 +664,9 @@ def obter_resumo():
                 "codigo":
                     codigo,
 
-                "funcoes": {}
+                "funcoes": {},
+
+                "detalhes": {}
 
             }
 
@@ -657,6 +783,41 @@ def obter_resumo():
                     funcao_exibicao
                 ] += 1
 
+                pessoas_disponiveis[
+                    codigo_base
+                ]["detalhes"].setdefault(
+                    funcao_exibicao,
+                    []
+                ).append({
+                    "base":
+                        base,
+
+                    "codigo_base":
+                        codigo_base,
+
+                    "equipe":
+                        str(equipe.PREFIXO).strip()
+                        if equipe.PREFIXO is not None
+                        else "",
+
+                    "chapa":
+                        str(colaborador.CHAPA).strip(),
+
+                    "nome":
+                        str(colaborador.NOME).strip(),
+
+                    "funcao":
+                        funcao_exibicao,
+
+                    "funcao_sistema":
+                        str(colaborador.FUNÇÃO).strip()
+                        if colaborador.FUNÇÃO is not None
+                        else "",
+
+                    "vaga":
+                        str(composicao.FUNÇÃO_ER).strip()
+                })
+
 
         # ====================================================
         # TRANSFORMAR PARA LISTA
@@ -678,7 +839,55 @@ def obter_resumo():
                     codigo,
 
                 "funcoes":
-                    dados["funcoes"]
+                    dados["funcoes"],
+
+                "detalhes":
+                    dados["detalhes"]
+
+            })
+
+
+        # ====================================================
+        # COLABORADORES NÃO ALOCADOS
+        # ====================================================
+
+        chapas_alocadas = {
+
+            str(registro.CHAPA).strip()
+
+            for registro
+            in session.query(MembroEquipe.CHAPA).all()
+
+        }
+
+        lista_nao_alocados = []
+
+        for colaborador in session.query(Colaborador).order_by(Colaborador.NOME):
+
+            chapa = str(colaborador.CHAPA).strip()
+
+            if chapa in chapas_alocadas:
+                continue
+
+            secao = str(colaborador.SEÇÃO).strip() if colaborador.SEÇÃO else ""
+
+            dados_base = base_da_secao(secao)
+
+            lista_nao_alocados.append({
+
+                "chapa": chapa,
+
+                "nome": str(colaborador.NOME).strip(),
+
+                "funcao": str(colaborador.FUNÇÃO).strip()
+                if colaborador.FUNÇÃO
+                else "",
+
+                "secao": secao,
+
+                "base": dados_base["nome"],
+
+                "codigo": dados_base["codigo"]
 
             })
 
@@ -722,7 +931,10 @@ def obter_resumo():
                 filtro_base,
 
             "pessoas_disponiveis":
-                lista_disponiveis
+                lista_disponiveis,
+
+            "pessoas_nao_alocadas":
+                lista_nao_alocados
 
         })
 
@@ -887,6 +1099,16 @@ def obter_equipes():
                     vagas
 
             })
+
+
+        resultado.sort(
+            key=lambda equipe: (
+                StringOrdenacaoFolguista(
+                    equipe["prefixo"]
+                ),
+                equipe["prefixo"]
+            )
+        )
 
 
         return jsonify(
@@ -1119,6 +1341,10 @@ def obter_colaboradores():
                 colaborador.CHAPA
             ).strip()
 
+            dados_base = base_da_secao(
+                colaborador.SEÇÃO
+            )
+
 
             resultado.append({
 
@@ -1136,6 +1362,18 @@ def obter_colaboradores():
                         colaborador.FUNÇÃO
                         or ""
                     ),
+
+                "secao":
+                    (
+                        colaborador.SEÇÃO
+                        or ""
+                    ),
+
+                "base":
+                    dados_base["nome"],
+
+                "codigo_base":
+                    dados_base["codigo"],
 
                 "alocado":
                     (
@@ -1232,111 +1470,118 @@ def alocar_colaborador():
 
     try:
 
-        colaborador = (
+        with session.begin():
 
-            session.query(
-                Colaborador
-            )
+            colaborador = (
 
-            .filter(
-                Colaborador.CHAPA == chapa
-            )
-
-            .first()
-
-        )
-
-
-        if not colaborador:
-
-            return jsonify({
-
-                "erro":
-                    "Colaborador não encontrado."
-
-            }), 404
-
-
-        alocacao_existente = (
-
-            session.query(
-                MembroEquipe
-            )
-
-            .filter(
-                MembroEquipe.CHAPA == chapa
-            )
-
-            .first()
-
-        )
-
-
-        if alocacao_existente:
-
-            return jsonify({
-
-                "erro": (
-                    "Este colaborador já está "
-                    "alocado em outra equipe."
+                session.query(
+                    Colaborador
                 )
 
-            }), 400
+                .filter(
+                    Colaborador.CHAPA == chapa
+                )
 
+                .with_for_update()
 
-        composicao = (
+                .first()
 
-            session.query(
-                ComposicaoEquipe
             )
 
-            .filter(
-                ComposicaoEquipe.id
-                == composicao_id
+
+            if not colaborador:
+
+                return jsonify({
+
+                    "erro":
+                        "Colaborador não encontrado."
+
+                }), 404
+
+
+            alocacao_existente = (
+
+                session.query(
+                    MembroEquipe
+                )
+
+                .filter(
+                    MembroEquipe.CHAPA == chapa
+                )
+
+                .with_for_update()
+
+                .first()
+
             )
 
-            .first()
 
-        )
+            if alocacao_existente:
 
+                return jsonify({
 
-        if not composicao:
+                    "erro": (
+                        "Este colaborador já está "
+                        "alocado em outra equipe."
+                    )
 
-            return jsonify({
-
-                "erro":
-                    "Vaga não encontrada."
-
-            }), 404
+                }), 400
 
 
-        if composicao.membro:
+            composicao = (
 
-            return jsonify({
+                session.query(
+                    ComposicaoEquipe
+                )
 
-                "erro":
-                    "Esta vaga já está ocupada."
+                .filter(
+                    ComposicaoEquipe.id
+                    == composicao_id
+                )
 
-            }), 400
+                .with_for_update()
 
+                .first()
 
-        membro = MembroEquipe(
-
-            composicao_id=
-                composicao_id,
-
-            CHAPA=
-                chapa
-
-        )
+            )
 
 
-        session.add(
-            membro
-        )
+            if not composicao:
+
+                return jsonify({
+
+                    "erro":
+                        "Vaga não encontrada."
+
+                }), 404
 
 
-        session.commit()
+            if composicao.membro:
+
+                return jsonify({
+
+                    "erro":
+                        "Esta vaga já está ocupada."
+
+                }), 400
+
+
+            membro = MembroEquipe(
+
+                composicao_id=
+                    composicao_id,
+
+                CHAPA=
+                    chapa
+
+            )
+
+
+            session.add(
+                membro
+            )
+
+            session.flush()
 
 
         return jsonify({
@@ -1574,6 +1819,25 @@ def normalizar(texto):
 
 
     return texto
+
+
+def base_da_secao(secao):
+
+    base = DE_PARA_SECOES.get(
+        normalizar(secao),
+        str(secao).strip()
+        if secao is not None
+        else ""
+    )
+
+    return {
+        "nome": base,
+
+        "codigo": DE_PARA_BASES.get(
+            normalizar(base),
+            base
+        )
+    }
 
 
 # ============================================================

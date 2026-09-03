@@ -9,6 +9,9 @@ __pycache__/
 # Configurações locais do VS Code
 .vscode/
 
+# Cache local do PowerShell
+Microsoft/
+
 # Bancos de dados locais
 *.db
 *.sqlite

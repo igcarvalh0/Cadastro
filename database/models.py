@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Date, ForeignKey
+from sqlalchemy import Column, Integer, String, Date, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import relationship
 
 from database.base import Base
@@ -96,6 +96,10 @@ class ComposicaoEquipe(Base):
 
 class MembroEquipe(Base):
     __tablename__ = "membros_equipes"
+    __table_args__ = (
+        UniqueConstraint("CHAPA", name="uq_membros_chapa"),
+        UniqueConstraint("composicao_id", name="uq_membros_composicao_id"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
 
@@ -107,11 +111,11 @@ class MembroEquipe(Base):
     )
 
     CHAPA = Column(
-    String,
-    ForeignKey("colaboradores.CHAPA"),
-    nullable=True
-)
-
+        String,
+        ForeignKey("colaboradores.CHAPA"),
+        nullable=False,
+        unique=True
+    )
 
     composicao = relationship(
         "ComposicaoEquipe",
