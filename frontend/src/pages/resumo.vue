@@ -25,6 +25,8 @@
           }}</q-tooltip>
         </q-btn>
 
+        <q-btn flat label="Vagas" @click="irParaCadastroVagas" />
+
         <q-btn flat label="Banco de Dados" @click="irParaBanco" />
       </q-toolbar>
     </q-header>
@@ -1224,6 +1226,10 @@ function voltar() {
 
 function irParaBanco() {
   router.push('/')
+}
+
+function irParaCadastroVagas() {
+  router.push('/cadastro-vagas')
 }
 
 // ============================================================

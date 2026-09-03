@@ -398,6 +398,138 @@ def obter_equipes():
 
 
 # ============================================================
+# API - CADASTRO DE EQUIPES E VAGAS
+# ============================================================
+
+@app.route("/api/equipes", methods=["POST"])
+def criar_equipe():
+    dados = request.get_json()
+    if not dados:
+        return jsonify({"erro": "Dados não enviados."}), 400
+
+    base = str(dados.get("base", "")).strip().upper()
+    prefixo = str(dados.get("prefixo", "")).strip()
+
+    if not base:
+        return jsonify({"erro": "Base não informada."}), 400
+    if not prefixo:
+        return jsonify({"erro": "Prefixo não informado."}), 400
+
+    session = SessionLocal()
+    try:
+        existente = (
+            session.query(Equipe)
+            .filter(Equipe.BASE == base, Equipe.PREFIXO == prefixo)
+            .first()
+        )
+        if existente:
+            return jsonify({"erro": "Já existe uma equipe com essa base e prefixo."}), 400
+
+        equipe = Equipe(BASE=base, PREFIXO=prefixo)
+        session.add(equipe)
+        session.commit()
+
+        return jsonify({
+            "sucesso": True,
+            "equipe": {"id": equipe.id, "base": equipe.BASE, "prefixo": equipe.PREFIXO},
+        })
+    except IntegrityError:
+        session.rollback()
+        return jsonify({"erro": "Já existe uma equipe com essa base e prefixo."}), 400
+    except Exception as erro:
+        session.rollback()
+        print(f"[ERRO] criar_equipe: {erro}")
+        return jsonify({"erro": "Não foi possível criar a equipe."}), 500
+    finally:
+        session.close()
+
+
+@app.route("/api/equipes/<int:equipe_id>", methods=["DELETE"])
+def remover_equipe(equipe_id):
+    session = SessionLocal()
+    try:
+        equipe = session.query(Equipe).filter(Equipe.id == equipe_id).first()
+        if not equipe:
+            return jsonify({"erro": "Equipe não encontrada."}), 404
+
+        if any(composicao.membro for composicao in equipe.composicoes):
+            return jsonify({"erro": "Não é possível excluir uma equipe com colaboradores alocados."}), 400
+
+        session.delete(equipe)
+        session.commit()
+
+        return jsonify({"sucesso": True, "mensagem": "Equipe removida com sucesso."})
+    except Exception as erro:
+        session.rollback()
+        print(f"[ERRO] remover_equipe: {erro}")
+        return jsonify({"erro": "Não foi possível remover a equipe."}), 500
+    finally:
+        session.close()
+
+
+@app.route("/api/equipes/vagas", methods=["POST"])
+def criar_vaga():
+    dados = request.get_json()
+    if not dados:
+        return jsonify({"erro": "Dados não enviados."}), 400
+
+    equipe_id = dados.get("equipe_id")
+    funcao_er = str(dados.get("funcao_er", "")).strip()
+    estrutura = str(dados.get("estrutura", "")).strip()
+
+    if not equipe_id:
+        return jsonify({"erro": "Equipe não informada."}), 400
+    if not funcao_er:
+        return jsonify({"erro": "Função da vaga não informada."}), 400
+    if not estrutura:
+        return jsonify({"erro": "Estrutura não informada."}), 400
+
+    session = SessionLocal()
+    try:
+        equipe = session.query(Equipe).filter(Equipe.id == equipe_id).first()
+        if not equipe:
+            return jsonify({"erro": "Equipe não encontrada."}), 404
+
+        vaga = ComposicaoEquipe(equipe_id=equipe_id, FUNÇÃO_ER=funcao_er, ESTRUTURA=estrutura)
+        session.add(vaga)
+        session.commit()
+
+        return jsonify({
+            "sucesso": True,
+            "vaga": {"id": vaga.id, "funcao_er": vaga.FUNÇÃO_ER, "estrutura": vaga.ESTRUTURA},
+        })
+    except Exception as erro:
+        session.rollback()
+        print(f"[ERRO] criar_vaga: {erro}")
+        return jsonify({"erro": "Não foi possível criar a vaga."}), 500
+    finally:
+        session.close()
+
+
+@app.route("/api/equipes/vagas/<int:vaga_id>", methods=["DELETE"])
+def remover_vaga(vaga_id):
+    session = SessionLocal()
+    try:
+        vaga = session.query(ComposicaoEquipe).filter(ComposicaoEquipe.id == vaga_id).first()
+        if not vaga:
+            return jsonify({"erro": "Vaga não encontrada."}), 404
+
+        if vaga.membro:
+            return jsonify({"erro": "Não é possível excluir uma vaga ocupada. Remova o colaborador antes."}), 400
+
+        session.delete(vaga)
+        session.commit()
+
+        return jsonify({"sucesso": True, "mensagem": "Vaga removida com sucesso."})
+    except Exception as erro:
+        session.rollback()
+        print(f"[ERRO] remover_vaga: {erro}")
+        return jsonify({"erro": "Não foi possível remover a vaga."}), 500
+    finally:
+        session.close()
+
+
+# ============================================================
 # API - OPÇÕES DE ALOCAÇÃO
 # ============================================================
 

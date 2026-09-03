@@ -23,6 +23,8 @@
           }}</q-tooltip>
         </q-btn>
 
+        <q-btn flat label="Vagas" @click="irParaCadastroVagas" />
+
         <q-btn flat label="Resumo" @click="irParaResumo" />
       </q-toolbar>
     </q-header>
@@ -770,6 +772,10 @@ async function carregarDados() {
 
 function irParaResumo() {
   router.push('/resumo')
+}
+
+function irParaCadastroVagas() {
+  router.push('/cadastro-vagas')
 }
 
 function selecionarColaborador(colaborador) {
