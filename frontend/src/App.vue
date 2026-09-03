@@ -1,3 +1,3 @@
 <template>
   <router-view />
-</template>4
+</template>

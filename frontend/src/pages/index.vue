@@ -445,11 +445,12 @@
 
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
-import { Dark } from 'quasar'
 
 import { useRouter } from 'vue-router'
+import { useModoNoturno } from '../composables/useModoNoturno'
 
 const router = useRouter()
+const { modoNoturno, alternarModoNoturno, restaurarModoNoturno } = useModoNoturno()
 
 // ============================================================
 // ESTADO
@@ -462,8 +463,6 @@ const colaboradores = ref([])
 const carregando = ref(false)
 
 const erro = ref('')
-
-const modoNoturno = ref(Dark.isActive)
 
 const baseSelecionada = ref([])
 
@@ -559,15 +558,6 @@ function equipePreenchida(equipe) {
   const vagas = equipe.vagas || []
 
   return vagas.length > 0 && vagas.every(vaga => Boolean(vaga.colaborador))
-}
-
-function alternarModoNoturno() {
-  modoNoturno.value = !modoNoturno.value
-  Dark.set(modoNoturno.value)
-  localStorage.setItem(
-    'gerenciadorEquipes_modoNoturno',
-    String(modoNoturno.value)
-  )
 }
 
 function atualizarSelecaoBases(bases) {
@@ -981,12 +971,7 @@ async function removerColaborador(composicaoId) {
 // ============================================================
 
 onMounted(() => {
-  const modoSalvo = localStorage.getItem('gerenciadorEquipes_modoNoturno')
-
-  if (modoSalvo !== null) {
-    modoNoturno.value = modoSalvo === 'true'
-    Dark.set(modoNoturno.value)
-  }
+  restaurarModoNoturno()
 
   carregarDados().then(() => {
     try {
@@ -1035,10 +1020,6 @@ watch(
 </script>
 
 <style scoped>
-.site-header {
-  background: #711424 !important;
-}
-
 .banco-page :deep(.q-list .q-item__section--main) {
   text-align: center;
 }

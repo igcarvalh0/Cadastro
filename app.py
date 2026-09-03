@@ -2,6 +2,7 @@ import unicodedata
 from pathlib import Path
 
 from flask import Flask, jsonify, redirect, request, send_from_directory
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import joinedload
 
 from database.database import SessionLocal
@@ -226,7 +227,7 @@ def obter_resumo():
                     registro["alocados"] += 1
 
                     funcao_colab = padronizar_funcao(colaborador.FUNÇÃO)
-                    if funcao_colab:
+                    if funcao_colab in ORDEM_FUNCOES:
                         pessoas_disponiveis[codigo_base]["funcoes"][funcao_colab] = (
                             pessoas_disponiveis[codigo_base]["funcoes"].get(funcao_colab, 0) + 1
                         )
@@ -516,36 +517,37 @@ def alocar_colaborador():
 
     session = SessionLocal()
     try:
-        colaborador = (
-            session.query(Colaborador)
-            .filter(Colaborador.CHAPA == chapa)
-            .first()
-        )
-        if not colaborador:
-            return jsonify({"erro": "Colaborador não encontrado."}), 404
+        with session.begin():
+            colaborador = (
+                session.query(Colaborador)
+                .filter(Colaborador.CHAPA == chapa)
+                .first()
+            )
+            if not colaborador:
+                return jsonify({"erro": "Colaborador não encontrado."}), 404
 
-        alocacao_existente = (
-            session.query(MembroEquipe)
-            .filter(MembroEquipe.CHAPA == chapa)
-            .first()
-        )
-        if alocacao_existente:
-            return jsonify({"erro": "Este colaborador já está alocado em outra equipe."}), 400
+            alocacao_existente = (
+                session.query(MembroEquipe)
+                .filter(MembroEquipe.CHAPA == chapa)
+                .first()
+            )
+            if alocacao_existente:
+                return jsonify({"erro": "Este colaborador já está alocado em outra equipe."}), 400
 
-        composicao = (
-            session.query(ComposicaoEquipe)
-            .filter(ComposicaoEquipe.id == composicao_id)
-            .first()
-        )
-        if not composicao:
-            return jsonify({"erro": "Vaga não encontrada."}), 404
+            composicao = (
+                session.query(ComposicaoEquipe)
+                .filter(ComposicaoEquipe.id == composicao_id)
+                .with_for_update()
+                .first()
+            )
+            if not composicao:
+                return jsonify({"erro": "Vaga não encontrada."}), 404
 
-        if composicao.membro:
-            return jsonify({"erro": "Esta vaga já está ocupada."}), 400
+            if composicao.membro:
+                return jsonify({"erro": "Esta vaga já está ocupada."}), 400
 
-        membro = MembroEquipe(composicao_id=composicao_id, CHAPA=chapa)
-        session.add(membro)
-        session.commit()
+            membro = MembroEquipe(composicao_id=composicao_id, CHAPA=chapa)
+            session.add(membro)
 
         return jsonify({
             "sucesso": True,
@@ -556,6 +558,9 @@ def alocar_colaborador():
                 "funcao": colaborador.FUNÇÃO or "",
             },
         })
+    except IntegrityError:
+        session.rollback()
+        return jsonify({"erro": "Este colaborador já está alocado em outra equipe, ou a vaga já está ocupada."}), 400
     except Exception as erro:
         session.rollback()
         print(f"[ERRO] alocar_colaborador: {erro}")

@@ -566,11 +566,12 @@
 
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
-import { Dark } from 'quasar'
 
 import { useRouter } from 'vue-router'
+import { useModoNoturno } from '../composables/useModoNoturno'
 
 const router = useRouter()
+const { modoNoturno, alternarModoNoturno, restaurarModoNoturno } = useModoNoturno()
 
 // ============================================================
 // ESTADO
@@ -599,8 +600,6 @@ const baseSelecionada = ref([])
 const carregando = ref(false)
 
 const erro = ref('')
-
-const modoNoturno = ref(Dark.isActive)
 
 const pessoasDisponiveis = ref([])
 
@@ -1227,26 +1226,12 @@ function irParaBanco() {
   router.push('/')
 }
 
-function alternarModoNoturno() {
-  modoNoturno.value = !modoNoturno.value
-  Dark.set(modoNoturno.value)
-  localStorage.setItem(
-    'gerenciadorEquipes_modoNoturno',
-    String(modoNoturno.value)
-  )
-}
-
 // ============================================================
 // INICIALIZAÇÃO
 // ============================================================
 
 onMounted(() => {
-  const modoSalvo = localStorage.getItem('gerenciadorEquipes_modoNoturno')
-
-  if (modoSalvo !== null) {
-    modoNoturno.value = modoSalvo === 'true'
-    Dark.set(modoNoturno.value)
-  }
+  restaurarModoNoturno()
 
   carregarResumo().then(() => {
     try {
@@ -1279,10 +1264,6 @@ watch(
 </script>
 
 <style scoped>
-.site-header {
-  background: #711424 !important;
-}
-
 .resumo-page :deep(.q-table thead tr),
 .resumo-page :deep(.q-table thead th) {
   background: #711424 !important;
