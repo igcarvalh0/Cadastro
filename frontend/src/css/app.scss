@@ -1,12 +1,136 @@
-body {
-  background: #f5f1f2;
-  color: #2d2527;
-  font-family: 'Trebuchet MS', 'Segoe UI', sans-serif;
+// ============================================================
+// FONTES (hospedadas localmente: a CSP do app nao permite externas)
+// ============================================================
+
+@font-face {
+  font-family: 'Barlow Semi Condensed';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('/fonts/barlow-semi-condensed-600.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Barlow Semi Condensed';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/barlow-semi-condensed-700.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'IBM Plex Sans';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/ibm-plex-sans-400.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'IBM Plex Sans';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('/fonts/ibm-plex-sans-400.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'IBM Plex Sans';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('/fonts/ibm-plex-sans-400.woff2') format('woff2');
+}
+
+// ============================================================
+// TEMA
+// ============================================================
+
+:root {
+  --marca: #711424;
+  --marca-clara: #8d2136;
+  --titulo: #4f1723;
+  --fundo: #f2eeef;
+  --superficie: #ffffff;
+  --superficie-2: #faf7f8;
+  --tinta: #2d2527;
+  --tinta-fraca: #6d5f63;
+  --linha: rgba(113, 20, 36, 0.16);
+  --linha-forte: rgba(113, 20, 36, 0.32);
+  --folguista: #c9741b;
+  --folguista-fundo: #fbeedd;
+  --negativo: #b3261e;
+  --negativo-fundo: #fbe9e7;
+  --positivo: #1b6b45;
+  --positivo-fundo: #e6f2ea;
+  --neutro: #7a6c70;
+  --realce: #f7e9d7;
+  --sombra: 0 10px 28px rgba(65, 32, 38, 0.09);
+
+  --tipo-construcao: #711424;
+  --tipo-poda: #3f6b48;
+  --tipo-linha-viva: #4a5c80;
+  --tipo-tat: #6b4a78;
+  --tipo-folguista: #c9741b;
+  --tipo-outro: #6d5f63;
+
+  --fonte-ui: 'Barlow Semi Condensed', 'Segoe UI', sans-serif;
+  --fonte-texto: 'IBM Plex Sans', 'Segoe UI', sans-serif;
 }
 
 body.body--dark {
-  background: #1d191a;
-  color: #f1e9ea;
+  --marca: #7c1a2c;
+  --marca-clara: #99283f;
+  --titulo: #f2dbe0;
+  --fundo: #171314;
+  --superficie: #221c1e;
+  --superficie-2: #2b2325;
+  --tinta: #f1e9ea;
+  --tinta-fraca: #b7a6aa;
+  --linha: rgba(212, 154, 85, 0.2);
+  --linha-forte: rgba(212, 154, 85, 0.38);
+  --folguista: #e0a259;
+  --folguista-fundo: #3b2c1c;
+  --negativo: #f08a80;
+  --negativo-fundo: #3d2321;
+  --positivo: #6cc79a;
+  --positivo-fundo: #1e3329;
+  --neutro: #9c8b90;
+  --realce: #382a1c;
+  --sombra: 0 10px 28px rgba(0, 0, 0, 0.32);
+
+  // no escuro as cores de disciplina precisam clarear para continuarem legiveis
+  --tipo-construcao: #e08a9c;
+  --tipo-poda: #86c294;
+  --tipo-linha-viva: #9ab0d8;
+  --tipo-tat: #c3a0cd;
+  --tipo-folguista: #e0a259;
+  --tipo-outro: #b7a6aa;
+
+  // o Quasar pinta o fundo escuro com #121212; aqui usamos o tom quente do tema
+  background: var(--fundo);
+}
+
+// ============================================================
+// BASE
+// ============================================================
+
+body {
+  background: var(--fundo);
+  color: var(--tinta);
+  font-family: var(--fonte-texto);
+}
+
+.q-page {
+  background: transparent;
+}
+
+// ============================================================
+// CABEÇALHO
+// ============================================================
+
+.site-header {
+  background: var(--marca) !important;
 }
 
 .q-header .q-toolbar {
@@ -16,8 +140,9 @@ body.body--dark {
 }
 
 .q-toolbar__title {
-  font-weight: 700;
-  letter-spacing: 0;
+  font-family: var(--fonte-ui);
+  font-weight: 600;
+  letter-spacing: 0.01em;
 }
 
 .site-logo {
@@ -36,118 +161,157 @@ body.body--dark {
   object-position: left center;
 }
 
-.site-header {
-  background: #711424 !important;
-}
+// ============================================================
+// TIPOGRAFIA
+// ============================================================
 
+.text-h4,
 .text-h5,
 .text-h6 {
-  color: #4f1723;
+  font-family: var(--fonte-ui);
+  color: var(--titulo);
   font-weight: 700;
+  letter-spacing: 0;
+  text-wrap: balance;
 }
 
-.body--dark .text-h5,
-.body--dark .text-h6 {
-  color: #f4dfe3;
+.text-subtitle1,
+.text-subtitle2,
+.text-caption {
+  color: var(--tinta-fraca);
 }
 
-.body--dark .text-grey-7,
-.body--dark .text-grey-8,
-.body--dark .text-grey-9,
-.body--dark .text-caption,
-.body--dark .text-subtitle2 {
-  color: #d8c8cb !important;
+.text-overline {
+  font-family: var(--fonte-ui);
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: var(--marca-clara);
 }
 
-.body--dark .q-card,
-.body--dark .q-item,
-.body--dark .q-field__control,
-.body--dark .q-field__native,
-.body--dark .q-field__label,
-.body--dark .q-table {
-  color: #f1e9ea;
+// os utilitarios de cinza do Quasar sao fixos e nao acompanham o tema
+.text-grey-7,
+.text-grey-8,
+.text-grey-9 {
+  color: var(--tinta-fraca) !important;
 }
 
-// O Quasar colore os textos secundarios de QItemLabel (caption/overline/header)
-// com color-mix(in srgb, currentColor N%, transparent). Alguns navegadores nao
+// O Quasar colore os textos secundarios de QItemLabel com
+// color-mix(in srgb, currentColor N%, transparent). Alguns navegadores nao
 // repintam esse valor quando so a cor herdada do body muda ao trocar de tema,
-// deixando o texto com a cor do tema anterior ate outra atualizacao da tela
-// forcar o recalculo. Fixamos aqui uma cor explicita por tema para evitar
-// depender do currentColor dinamico.
+// deixando o texto com a cor do tema anterior. Cor explicita evita isso.
 .q-item__label--caption,
 .q-item__label--header,
 .q-item__section--side:not(.q-item__section--avatar) {
-  color: rgba(45, 37, 39, 0.54);
+  color: var(--tinta-fraca);
 }
 
 .q-item__label--overline {
-  color: rgba(45, 37, 39, 0.7);
+  color: var(--tinta-fraca);
 }
 
-.body--dark .q-item__label--caption {
-  color: rgba(241, 233, 234, 0.8);
-}
-
-.body--dark .q-item__label--header {
-  color: rgba(241, 233, 234, 0.64);
-}
-
-.body--dark .q-item__section--side:not(.q-item__section--avatar) {
-  color: rgba(241, 233, 234, 0.7);
-}
-
-.body--dark .q-item__label--overline {
-  color: rgba(241, 233, 234, 0.7);
-}
-
-.body--dark .bg-blue-1 {
-  background: #3a2830 !important;
-}
-
-.body--dark .bg-orange-1 {
-  background: #49372b !important;
-}
-
-.body--dark .bg-green-1 {
-  background: #203c35 !important;
-}
-
-.body--dark .bg-red-1 {
-  background: #48272d !important;
-}
-
-.body--dark .bg-grey-2 {
-  background: #302b2d !important;
-}
-
-.q-page {
-  background: transparent;
-}
+// ============================================================
+// SUPERFÍCIES
+// ============================================================
 
 .q-card {
-  border-radius: 10px;
-  border-color: rgba(113, 20, 36, 0.18);
-  box-shadow: 0 8px 24px rgba(65, 32, 38, 0.06);
+  background: var(--superficie);
+  color: var(--tinta);
+  border-radius: 8px;
+  border: 1px solid var(--linha);
+  box-shadow: var(--sombra);
+}
+
+.q-card--bordered {
+  border-color: var(--linha);
+}
+
+// cartao dentro de cartao nao repete sombra: so o de fora e um objeto
+.q-card .q-card {
+  box-shadow: none;
+}
+
+.q-item,
+.q-field__control,
+.q-field__native,
+.q-field__label,
+.q-table {
+  color: var(--tinta);
 }
 
 .q-separator {
-  opacity: 0.55;
-}
-
-.body--dark .q-card {
-  border-color: rgba(212, 154, 85, 0.2);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+  background: var(--linha);
 }
 
 .q-btn {
-  border-radius: 7px;
+  border-radius: 6px;
+  font-family: var(--fonte-ui);
+  font-weight: 600;
+  letter-spacing: 0.03em;
 }
 
+// ============================================================
+// TABELAS
+// ============================================================
+
 .q-table thead tr {
-  background: #711424;
+  background: var(--marca);
 }
 
 .q-table thead th {
   color: #fff;
-  font-weight: 700;
+  font-family: var(--fonte-ui);
+  font-weight: 600;
+  font-size: 0.78rem;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.q-table tbody td {
+  font-variant-numeric: tabular-nums;
+  border-color: var(--linha);
+}
+
+.q-table__container,
+.q-table tbody tr {
+  background: var(--superficie);
+}
+
+// ============================================================
+// FUNDOS SEMÂNTICOS
+// ============================================================
+
+.bg-red-1 {
+  background: var(--negativo-fundo) !important;
+}
+
+.bg-green-1 {
+  background: var(--positivo-fundo) !important;
+}
+
+.bg-orange-1 {
+  background: var(--folguista-fundo) !important;
+}
+
+.bg-blue-1 {
+  background: var(--realce) !important;
+}
+
+.bg-grey-2 {
+  background: var(--superficie-2) !important;
+}
+
+.text-negative {
+  color: var(--negativo) !important;
+}
+
+.text-positive {
+  color: var(--positivo) !important;
+}
+
+.text-primary {
+  color: var(--marca-clara) !important;
+}
+
+body.body--dark .text-primary {
+  color: var(--tipo-construcao) !important;
 }

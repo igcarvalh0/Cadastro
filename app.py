@@ -1,7 +1,17 @@
+import io
 import unicodedata
 from pathlib import Path
 
-from flask import Flask, jsonify, redirect, request, send_from_directory
+import pandas as pd
+
+from flask import (
+    Flask,
+    jsonify,
+    redirect,
+    request,
+    send_file,
+    send_from_directory,
+)
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import joinedload
 
@@ -30,6 +40,11 @@ def servir_assets_frontend(arquivo):
     resposta = send_from_directory(FRONTEND_DIST_DIR / "assets", arquivo)
     resposta.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
     return resposta
+
+
+@app.route("/fonts/<path:arquivo>")
+def servir_fontes_frontend(arquivo):
+    return send_from_directory(FRONTEND_DIST_DIR / "fonts", arquivo)
 
 
 @app.route("/icons/<path:arquivo>")
@@ -113,7 +128,8 @@ def padronizar_funcao(funcao):
         return "MOTORISTA"
     if funcao_norm in ("AUXILIAR DE ELETRICISTA", "AUXILIAR ELETRICISTA"):
         return "AUXILIAR DE ELETRICISTA"
-    return str(funcao).strip() if funcao else ""
+    # funcao nova (Podador, etc.): exibe em caixa alta, igual as demais
+    return str(funcao).strip().upper() if funcao else ""
 
 
 def ordem_funcao(funcao):
@@ -160,6 +176,7 @@ def obter_resumo():
     session = SessionLocal()
     try:
         filtro_base = request.args.get("base", "").strip()
+        filtro_tipo = request.args.get("tipo", "").strip()
 
         equipes = (
             session.query(Equipe)
@@ -174,6 +191,7 @@ def obter_resumo():
 
         resumo_bases = {}
         pessoas_disponiveis = {}
+        tipos_existentes = set()
 
         for equipe in equipes:
             base = str(equipe.BASE).strip() if equipe.BASE is not None else ""
@@ -181,21 +199,23 @@ def obter_resumo():
                 continue
 
             codigo_base = DE_PARA_BASES.get(normalizar(base), base)
+            prefixo = str(equipe.PREFIXO).strip() if equipe.PREFIXO is not None else ""
+            folguista = eh_folguista(prefixo)
+
+            # o tipo alimenta o filtro mesmo quando a base esta filtrada fora
+            for composicao in (equipe.composicoes or []):
+                tipos_existentes.add(tipo_equipe_da_vaga(composicao))
 
             if filtro_base:
                 filtro_norm = normalizar(filtro_base)
                 if filtro_norm not in (normalizar(base), normalizar(codigo_base)):
                     continue
 
-            prefixo = str(equipe.PREFIXO).strip() if equipe.PREFIXO is not None else ""
-            tipo_equipe = "FOLGUISTA" if normalizar(prefixo) == "FOLGUISTA" else "CONSTRUÇÃO"
-
             if base not in resumo_bases:
                 resumo_bases[base] = {
                     "base": base,
                     "codigo": codigo_base,
-                    "equipes": {"CONSTRUÇÃO": 0, "FOLGUISTA": 0},
-                    "funcoes": {"CONSTRUÇÃO": {}, "FOLGUISTA": {}},
+                    "grupos": {},
                 }
 
             if codigo_base not in pessoas_disponiveis:
@@ -206,20 +226,28 @@ def obter_resumo():
                     "detalhes": {},
                 }
 
-            resumo_bases[base]["equipes"][tipo_equipe] += 1
-
             for composicao in (equipe.composicoes or []):
+                tipo = tipo_equipe_da_vaga(composicao)
+
+                if filtro_tipo and normalizar(tipo) != normalizar(filtro_tipo):
+                    continue
+
                 funcao_exibicao = padronizar_funcao(composicao.FUNÇÃO_ER)
                 if not funcao_exibicao:
                     continue
 
-                if funcao_exibicao not in resumo_bases[base]["funcoes"][tipo_equipe]:
-                    resumo_bases[base]["funcoes"][tipo_equipe][funcao_exibicao] = {
-                        "vagas": 0,
-                        "alocados": 0,
-                    }
+                chave = "FOLGUISTA" if folguista else tipo
+                grupo = resumo_bases[base]["grupos"].setdefault(chave, {
+                    "tipo": chave,
+                    "folguista": folguista,
+                    "prefixos": set(),
+                    "funcoes": {},
+                })
+                grupo["prefixos"].add(prefixo)
 
-                registro = resumo_bases[base]["funcoes"][tipo_equipe][funcao_exibicao]
+                registro = grupo["funcoes"].setdefault(
+                    funcao_exibicao, {"vagas": 0, "alocados": 0}
+                )
                 registro["vagas"] += 1
 
                 if composicao.membro and composicao.membro.colaborador:
@@ -235,6 +263,7 @@ def obter_resumo():
                             "base": base,
                             "codigo_base": codigo_base,
                             "equipe": prefixo,
+                            "tipo": tipo,
                             "chapa": str(colaborador.CHAPA).strip(),
                             "nome": str(colaborador.NOME).strip(),
                             "funcao": funcao_colab,
@@ -244,40 +273,82 @@ def obter_resumo():
 
         resultado = []
         for base, dados_base in resumo_bases.items():
-            linhas = []
-            for tipo_equipe in ("CONSTRUÇÃO", "FOLGUISTA"):
-                funcoes = dados_base["funcoes"][tipo_equipe]
-                for funcao, dados_funcao in sorted(funcoes.items(), key=lambda item: ordem_funcao(item[0])):
-                    vagas = dados_funcao["vagas"]
-                    alocados = dados_funcao["alocados"]
-                    linhas.append({
-                        "equipe": tipo_equipe,
+            grupos = []
+
+            for chave, dados_grupo in sorted(
+                dados_base["grupos"].items(),
+                key=lambda item: (item[1]["folguista"], item[0]),
+            ):
+                funcoes = [
+                    {
                         "funcao": funcao,
-                        "vagas": vagas,
-                        "alocados": alocados,
-                        "diferenca": alocados - vagas,
-                    })
+                        "vagas": dados["vagas"],
+                        "alocados": dados["alocados"],
+                        "diferenca": dados["alocados"] - dados["vagas"],
+                    }
+                    for funcao, dados in sorted(
+                        dados_grupo["funcoes"].items(),
+                        key=lambda item: ordem_funcao(item[0]),
+                    )
+                ]
+
+                vagas = sum(f["vagas"] for f in funcoes)
+                alocados = sum(f["alocados"] for f in funcoes)
+
+                grupos.append({
+                    "tipo": chave,
+                    "folguista": dados_grupo["folguista"],
+                    "rotulo": chave,
+                    "equipes": len(dados_grupo["prefixos"]),
+                    "funcoes": funcoes,
+                    "vagas": vagas,
+                    "alocados": alocados,
+                    "diferenca": alocados - vagas,
+                })
 
             resultado.append({
                 "base": base,
                 "codigo": dados_base["codigo"],
-                "equipes": dados_base["equipes"],
-                "funcoes": linhas,
+                "grupos": grupos,
+                "equipes": sum(g["equipes"] for g in grupos),
+                "vagas": sum(g["vagas"] for g in grupos),
+                "alocados": sum(g["alocados"] for g in grupos),
             })
 
         resultado.sort(key=lambda item: item["base"])
 
-        total_construcao = sum(item["equipes"]["CONSTRUÇÃO"] for item in resultado)
-        total_folguista = sum(item["equipes"]["FOLGUISTA"] for item in resultado)
-        total_vagas = sum(linha["vagas"] for item in resultado for linha in item["funcoes"])
-        total_alocados = sum(linha["alocados"] for item in resultado for linha in item["funcoes"])
+        total_vagas = sum(item["vagas"] for item in resultado)
+        total_alocados = sum(item["alocados"] for item in resultado)
+
+        # totais por disciplina, para os chips do topo
+        totais_por_grupo = {}
+        for item in resultado:
+            for grupo in item["grupos"]:
+                chave = (grupo["tipo"], grupo["folguista"])
+                acumulado = totais_por_grupo.setdefault(chave, {
+                    "tipo": grupo["tipo"],
+                    "folguista": grupo["folguista"],
+                    "rotulo": grupo["rotulo"],
+                    "equipes": 0,
+                    "vagas": 0,
+                    "alocados": 0,
+                })
+                acumulado["equipes"] += grupo["equipes"]
+                acumulado["vagas"] += grupo["vagas"]
+                acumulado["alocados"] += grupo["alocados"]
+
+        grupos_totais = [
+            {**dados, "diferenca": dados["alocados"] - dados["vagas"]}
+            for dados in sorted(
+                totais_por_grupo.values(),
+                key=lambda d: (d["tipo"], d["folguista"]),
+            )
+        ]
 
         total = {
             "base": "TOTAL",
-            "equipes": {
-                "CONSTRUÇÃO": total_construcao,
-                "FOLGUISTA": total_folguista,
-            },
+            "grupos": grupos_totais,
+            "equipes": sum(g["equipes"] for g in grupos_totais),
             "vagas": total_vagas,
             "alocados": total_alocados,
             "diferenca": total_alocados - total_vagas,
@@ -322,6 +393,8 @@ def obter_resumo():
             "total": total,
             "bases_filtro": bases_filtro,
             "base_selecionada": filtro_base,
+            "tipos_filtro": sorted(tipos_existentes),
+            "tipo_selecionado": filtro_tipo,
             "pessoas_disponiveis": lista_disponiveis,
             "pessoas_nao_alocadas": lista_nao_alocados,
         })
@@ -367,6 +440,7 @@ def obter_equipes():
                 vagas.append({
                     "id": composicao.id,
                     "funcao_er": composicao.FUNÇÃO_ER or "",
+                    "tipo": tipo_equipe_da_vaga(composicao),
                     "ocupada": colaborador is not None,
                     "colaborador": {
                         "chapa": str(colaborador.CHAPA),
@@ -379,6 +453,8 @@ def obter_equipes():
                 "id": equipe.id,
                 "prefixo": equipe.PREFIXO or "",
                 "base": equipe.BASE or "",
+                "tipos": tipos_da_equipe(equipe),
+                "folguista": eh_folguista(equipe.PREFIXO),
                 "vagas": vagas,
             })
 
@@ -444,6 +520,89 @@ def criar_equipe():
         session.close()
 
 
+@app.route("/api/equipes/<int:equipe_id>", methods=["PUT"])
+def atualizar_equipe(equipe_id):
+    dados = request.get_json()
+    if not dados:
+        return jsonify({"erro": "Dados não enviados."}), 400
+
+    base = str(dados.get("base", "")).strip().upper()
+    prefixo = str(dados.get("prefixo", "")).strip()
+
+    if not base:
+        return jsonify({"erro": "Base não informada."}), 400
+    if not prefixo:
+        return jsonify({"erro": "Prefixo não informado."}), 400
+
+    session = SessionLocal()
+    try:
+        equipe = session.query(Equipe).filter(Equipe.id == equipe_id).first()
+        if not equipe:
+            return jsonify({"erro": "Equipe não encontrada."}), 404
+
+        duplicada = (
+            session.query(Equipe)
+            .filter(
+                Equipe.BASE == base,
+                Equipe.PREFIXO == prefixo,
+                Equipe.id != equipe_id,
+            )
+            .first()
+        )
+        if duplicada:
+            return jsonify({"erro": "Já existe uma equipe com essa base e prefixo."}), 400
+
+        equipe.BASE = base
+        equipe.PREFIXO = prefixo
+        session.commit()
+
+        return jsonify({
+            "sucesso": True,
+            "equipe": {"id": equipe.id, "base": equipe.BASE, "prefixo": equipe.PREFIXO},
+        })
+    except IntegrityError:
+        session.rollback()
+        return jsonify({"erro": "Já existe uma equipe com essa base e prefixo."}), 400
+    except Exception as erro:
+        session.rollback()
+        print(f"[ERRO] atualizar_equipe: {erro}")
+        return jsonify({"erro": "Não foi possível atualizar a equipe."}), 500
+    finally:
+        session.close()
+
+
+@app.route("/api/equipes/<int:equipe_id>/membros", methods=["DELETE"])
+def remover_membros_equipe(equipe_id):
+    session = SessionLocal()
+    try:
+        equipe = session.query(Equipe).filter(Equipe.id == equipe_id).first()
+        if not equipe:
+            return jsonify({"erro": "Equipe não encontrada."}), 404
+
+        membros = [
+            composicao.membro
+            for composicao in equipe.composicoes
+            if composicao.membro
+        ]
+
+        for membro in membros:
+            session.delete(membro)
+
+        session.commit()
+
+        return jsonify({
+            "sucesso": True,
+            "removidos": len(membros),
+            "mensagem": f"{len(membros)} colaborador(es) removido(s) da equipe.",
+        })
+    except Exception as erro:
+        session.rollback()
+        print(f"[ERRO] remover_membros_equipe: {erro}")
+        return jsonify({"erro": "Não foi possível remover os colaboradores da equipe."}), 500
+    finally:
+        session.close()
+
+
 @app.route("/api/equipes/<int:equipe_id>", methods=["DELETE"])
 def remover_equipe(equipe_id):
     session = SessionLocal()
@@ -463,6 +622,560 @@ def remover_equipe(equipe_id):
         session.rollback()
         print(f"[ERRO] remover_equipe: {erro}")
         return jsonify({"erro": "Não foi possível remover a equipe."}), 500
+    finally:
+        session.close()
+
+
+
+# ============================================================
+# API - PLANILHA DE EQUIPES (EXPORTAR / IMPORTAR)
+# ============================================================
+
+COLUNA_TIPO_EQUIPE = "TIPO EQUIPE"
+COLUNAS_FIXAS_PLANILHA = ("BASE", "PREFIXO", COLUNA_TIPO_EQUIPE, "AÇÃO")
+COLUNAS_OBRIGATORIAS_PLANILHA = ("BASE", "PREFIXO", "AÇÃO")
+ACOES_PLANILHA = ("criar", "editar", "excluir")
+
+TIPO_EQUIPE_PADRAO = "CONSTRUÇÃO"
+
+
+def eh_folguista(prefixo):
+    """Folguista continua sendo indicado pelo prefixo, nao pelo tipo."""
+    return normalizar(prefixo) == "FOLGUISTA"
+
+
+def tipo_equipe_da_vaga(composicao):
+    """A disciplina da vaga fica na ESTRUTURA: CONSTRUÇÃO, PODA, LINHA VIVA, TAT...
+
+    Dados antigos gravavam "Folguista" na ESTRUTURA, quando ela ainda separava
+    equipe normal de folguista. Nesses casos a disciplina e construcao.
+    """
+    valor = str(composicao.ESTRUTURA or "").strip()
+    if not valor or normalizar(valor) == "FOLGUISTA":
+        return TIPO_EQUIPE_PADRAO
+    return valor.upper()
+
+
+def tipos_da_equipe(equipe):
+    tipos = {tipo_equipe_da_vaga(c) for c in (equipe.composicoes or [])}
+    return sorted(tipos) if tipos else [TIPO_EQUIPE_PADRAO]
+
+
+def montar_planilha_equipes(session):
+    equipes = (
+        session.query(Equipe)
+        .options(joinedload(Equipe.composicoes))
+        .order_by(Equipe.BASE, Equipe.PREFIXO)
+        .all()
+    )
+
+    funcoes = sorted(
+        {
+            str(c.FUNÇÃO_ER).strip()
+            for e in equipes
+            for c in (e.composicoes or [])
+            if c.FUNÇÃO_ER
+        },
+        key=lambda f: (ordem_funcao(f), f),
+    )
+
+    linhas = []
+    for equipe in equipes:
+        # uma linha por disciplina: a equipe Folguista pode ter vagas de
+        # construcao e de poda ao mesmo tempo, e cada uma vira uma linha.
+        por_tipo = {}
+        for composicao in (equipe.composicoes or []):
+            tipo = tipo_equipe_da_vaga(composicao)
+            funcao = str(composicao.FUNÇÃO_ER).strip()
+            por_tipo.setdefault(tipo, {})
+            por_tipo[tipo][funcao] = por_tipo[tipo].get(funcao, 0) + 1
+
+        for tipo in sorted(por_tipo):
+            linha = {
+                "BASE": equipe.BASE,
+                "PREFIXO": equipe.PREFIXO,
+                COLUNA_TIPO_EQUIPE: tipo,
+                "AÇÃO": "editar",
+            }
+            for funcao in funcoes:
+                linha[funcao] = por_tipo[tipo].get(funcao, 0)
+            linhas.append(linha)
+
+    return pd.DataFrame(linhas, columns=list(COLUNAS_FIXAS_PLANILHA) + funcoes)
+
+
+def quantidade_da_celula(valor):
+    if valor is None or (isinstance(valor, float) and pd.isna(valor)):
+        return 0
+    texto = str(valor).strip()
+    if not texto or texto.lower() == "nan":
+        return 0
+    return int(float(texto))
+
+
+def texto_da_celula(valor):
+    texto = str(valor or "").strip()
+    return "" if texto.lower() == "nan" else texto
+
+
+def analisar_planilha_equipes(arquivo, session):
+    """Le a planilha e devolve o plano de mudancas, sem gravar nada.
+
+    A unidade de analise e a EQUIPE inteira, nao a linha: todas as linhas de um
+    mesmo BASE+PREFIXO descrevem juntas como aquela equipe deve ficar. E o que
+    permite trocar o TIPO EQUIPE de uma equipe existente e o sistema entender
+    como reclassificacao, em vez de acrescentar uma disciplina nova e deixar as
+    vagas antigas orfas.
+    """
+    try:
+        df = pd.read_excel(arquivo)
+    except Exception as erro:
+        raise ValueError(f"Não foi possível ler a planilha: {erro}")
+
+    colunas = {str(c).strip(): c for c in df.columns}
+    faltando = [c for c in COLUNAS_OBRIGATORIAS_PLANILHA if c not in colunas]
+    if faltando:
+        raise ValueError(f"A planilha precisa das colunas {', '.join(faltando)}.")
+
+    colunas_funcao = [nome for nome in colunas if nome not in COLUNAS_FIXAS_PLANILHA]
+    if not colunas_funcao:
+        raise ValueError("A planilha precisa de ao menos uma coluna de função.")
+
+    equipes_existentes = {
+        (normalizar(e.BASE), normalizar(e.PREFIXO)): e
+        for e in session.query(Equipe)
+        .options(joinedload(Equipe.composicoes).joinedload(ComposicaoEquipe.membro))
+        .all()
+    }
+
+    plano = {"criar": [], "editar": [], "excluir": [], "erros": [], "ignoradas": 0}
+
+    def registrar_erro(numero, rotulo, mensagem):
+        plano["erros"].append({"linha": numero, "equipe": rotulo, "erro": mensagem})
+
+    # ---------- 1. le as linhas e agrupa por equipe ----------
+
+    equipes_do_arquivo = {}
+    vistas = set()
+
+    for indice, linha in df.iterrows():
+        numero = int(indice) + 2  # +1 do cabecalho, +1 porque o Excel comeca em 1
+
+        base = texto_da_celula(linha[colunas["BASE"]]).upper()
+        prefixo = texto_da_celula(linha[colunas["PREFIXO"]])
+        acao = texto_da_celula(linha[colunas["AÇÃO"]]).lower()
+        tipo = (
+            texto_da_celula(linha[colunas[COLUNA_TIPO_EQUIPE]]).upper()
+            if COLUNA_TIPO_EQUIPE in colunas
+            else ""
+        ) or TIPO_EQUIPE_PADRAO
+
+        if not base and not prefixo and not acao:
+            continue
+
+        rotulo = f"{prefixo or '(sem prefixo)'} / {base or '(sem base)'} · {tipo}"
+
+        if not acao:
+            plano["ignoradas"] += 1
+            continue
+
+        if acao not in ACOES_PLANILHA:
+            registrar_erro(numero, rotulo, f"Ação '{acao}' não existe. Use criar, editar ou excluir.")
+            continue
+        if not base:
+            registrar_erro(numero, rotulo, "Base não informada.")
+            continue
+        if not prefixo:
+            registrar_erro(numero, rotulo, "Prefixo não informado.")
+            continue
+
+        chave_linha = (normalizar(base), normalizar(prefixo), normalizar(tipo))
+        if chave_linha in vistas:
+            registrar_erro(numero, rotulo, f"A equipe já aparece na planilha com o tipo {tipo}.")
+            continue
+        vistas.add(chave_linha)
+
+        try:
+            alvos = {
+                nome: quantidade_da_celula(linha[colunas[nome]])
+                for nome in colunas_funcao
+            }
+        except (TypeError, ValueError):
+            registrar_erro(numero, rotulo, "As quantidades precisam ser números inteiros.")
+            continue
+
+        if any(q < 0 for q in alvos.values()):
+            registrar_erro(numero, rotulo, "As quantidades não podem ser negativas.")
+            continue
+
+        chave_equipe = (normalizar(base), normalizar(prefixo))
+        grupo = equipes_do_arquivo.setdefault(chave_equipe, {
+            "base": base,
+            "prefixo": prefixo,
+            "equipe": equipes_existentes.get(chave_equipe),
+            "linhas": [],
+        })
+        grupo["linhas"].append({
+            "numero": numero,
+            "rotulo": rotulo,
+            "tipo": tipo,
+            "acao": acao,
+            "alvos": {f: q for f, q in alvos.items()},
+        })
+
+    # ---------- 2. resolve equipe por equipe ----------
+
+    for dados in equipes_do_arquivo.values():
+        equipe = dados["equipe"]
+        linhas = dados["linhas"]
+        primeira = linhas[0]
+
+        exclusoes = [l for l in linhas if l["acao"] == "excluir"]
+        mantidas = [l for l in linhas if l["acao"] != "excluir"]
+
+        # --- exclusoes: apagam as vagas daquela disciplina ---
+        for l in exclusoes:
+            if not equipe:
+                registrar_erro(l["numero"], l["rotulo"], "Equipe não encontrada.")
+                continue
+            alvo = [
+                c for c in equipe.composicoes
+                if tipo_equipe_da_vaga(c) == l["tipo"]
+            ]
+            if not alvo:
+                registrar_erro(l["numero"], l["rotulo"], f"A equipe não tem vagas de {l['tipo']}.")
+                continue
+            ocupadas = sum(1 for c in alvo if c.membro)
+            if ocupadas:
+                registrar_erro(
+                    l["numero"], l["rotulo"],
+                    f"Há {ocupadas} colaborador(es) alocado(s) nas vagas de {l['tipo']}. "
+                    "Remova antes de excluir."
+                )
+                continue
+            restantes = [
+                c for c in equipe.composicoes
+                if tipo_equipe_da_vaga(c) != l["tipo"]
+            ]
+            plano["excluir"].append({
+                "linha": l["numero"],
+                "equipe": l["rotulo"],
+                "equipe_id": equipe.id,
+                "tipo": l["tipo"],
+                "vagas": len(alvo),
+                "apaga_equipe": not restantes and not mantidas,
+            })
+
+        if not mantidas:
+            continue
+
+        # --- composicao desejada, somando todas as linhas da equipe ---
+        desejado = {}
+        for l in mantidas:
+            for funcao, qtd in l["alvos"].items():
+                if qtd:
+                    desejado[(l["tipo"], funcao)] = desejado.get((l["tipo"], funcao), 0) + qtd
+
+        # equipe nova: tudo e criacao, sem nada para comparar
+        if not equipe:
+            if not desejado:
+                registrar_erro(primeira["numero"], primeira["rotulo"], "Informe ao menos uma vaga.")
+                continue
+            for l in mantidas:
+                vagas = {f: q for f, q in l["alvos"].items() if q}
+                if not vagas:
+                    continue
+                plano["criar"].append({
+                    "linha": l["numero"],
+                    "base": dados["base"],
+                    "prefixo": dados["prefixo"],
+                    "tipo": l["tipo"],
+                    "equipe": l["rotulo"],
+                    "equipe_id": None,
+                    "vagas": vagas,
+                    "total": sum(vagas.values()),
+                    "era_edicao": l["acao"] == "editar",
+                    "equipe_nova": True,
+                })
+            continue
+
+        # --- composicao atual da equipe, por (disciplina, funcao) ---
+        atual = {}
+        for composicao in equipe.composicoes:
+            chave = (tipo_equipe_da_vaga(composicao), str(composicao.FUNÇÃO_ER).strip())
+            atual.setdefault(chave, []).append(composicao)
+
+        # disciplinas que sumiram do arquivo viram alvo 0: e assim que trocar o
+        # TIPO EQUIPE de uma equipe reclassifica, em vez de duplicar as vagas.
+        tipos_no_arquivo = {l["tipo"] for l in mantidas}
+        tipos_excluidos = {l["tipo"] for l in exclusoes}
+        for (tipo_atual, funcao) in atual:
+            if tipo_atual in tipos_no_arquivo or tipo_atual in tipos_excluidos:
+                continue
+            desejado.setdefault((tipo_atual, funcao), 0)
+
+        # funcoes que a planilha nao trouxe como coluna ficam de fora do calculo
+        funcoes_do_arquivo = set(colunas_funcao)
+
+        faltam = {}     # (tipo, funcao) -> quantidade a acrescentar
+        sobram = {}     # (tipo, funcao) -> [composicoes livres a remover]
+        problema = None
+
+        for chave in sorted(set(list(desejado.keys()) + list(atual.keys()))):
+            tipo_chave, funcao = chave
+            if funcao not in funcoes_do_arquivo:
+                continue
+
+            alvo = desejado.get(chave, 0)
+            existentes = atual.get(chave, [])
+            diferenca = alvo - len(existentes)
+
+            if diferenca > 0:
+                faltam[chave] = diferenca
+            elif diferenca < 0:
+                # ocupadas primeiro: retipar uma vaga ocupada e inofensivo (ela
+                # mantem id e colaborador, so muda de disciplina), entao elas sao
+                # as primeiras candidatas a reclassificacao. O que sobrar depois
+                # e o que sera apagado de fato, e ai as livres vem antes.
+                sobram[chave] = sorted(
+                    existentes,
+                    key=lambda c: (c.membro is None, -c.id),
+                )[: -diferenca]
+
+        if problema:
+            registrar_erro(primeira["numero"], primeira["rotulo"], problema)
+            continue
+
+        # --- casa sobra com falta na MESMA funcao: isso e trocar o tipo da vaga ---
+        mudancas = []
+        for (tipo_falta, funcao), quantidade in list(faltam.items()):
+            for (tipo_sobra, funcao_sobra), livres in list(sobram.items()):
+                if funcao_sobra != funcao or not livres or not quantidade:
+                    continue
+                movidas = min(quantidade, len(livres))
+                ids = [c.id for c in livres[:movidas]]
+                mudancas.append({
+                    "funcao": funcao,
+                    "retipar": movidas,
+                    "de": tipo_sobra,
+                    "para": tipo_falta,
+                    "ids": ids,
+                })
+                del livres[:movidas]
+                quantidade -= movidas
+                if not livres:
+                    del sobram[(tipo_sobra, funcao_sobra)]
+            if quantidade:
+                faltam[(tipo_falta, funcao)] = quantidade
+            else:
+                del faltam[(tipo_falta, funcao)]
+
+        for (tipo_chave, funcao), quantidade in faltam.items():
+            mudancas.append({"funcao": funcao, "adicionar": quantidade, "tipo": tipo_chave})
+
+        ocupadas_a_apagar = [
+            (tipo_chave, funcao, c)
+            for (tipo_chave, funcao), restantes in sobram.items()
+            for c in restantes
+            if c.membro
+        ]
+        if ocupadas_a_apagar:
+            tipo_chave, funcao, _ = ocupadas_a_apagar[0]
+            registrar_erro(
+                primeira["numero"], primeira["rotulo"],
+                f"Sobra {len(ocupadas_a_apagar)} vaga(s) ocupada(s) de {funcao} "
+                f"em {tipo_chave} para apagar. Remova os colaboradores antes."
+            )
+            continue
+
+        for (tipo_chave, funcao), restantes in sobram.items():
+            if restantes:
+                mudancas.append({
+                    "funcao": funcao,
+                    "remover": len(restantes),
+                    "tipo": tipo_chave,
+                    "ids": [c.id for c in restantes],
+                })
+
+        if not mudancas:
+            plano["ignoradas"] += len(mantidas)
+            continue
+
+        def descrever(m):
+            if "retipar" in m:
+                return f"{m['retipar']} {m['funcao']}: {m['de']} → {m['para']}"
+            if "adicionar" in m:
+                return f"+{m['adicionar']} {m['funcao']} ({m['tipo']})"
+            return f"-{m['remover']} {m['funcao']} ({m['tipo']})"
+
+        plano["editar"].append({
+            "linha": primeira["numero"],
+            "equipe": f"{dados['prefixo']} / {dados['base']}",
+            "equipe_id": equipe.id,
+            "mudancas": mudancas,
+            "resumo": ", ".join(descrever(m) for m in mudancas),
+        })
+
+    return plano
+
+
+@app.route("/api/equipes/planilha", methods=["GET"])
+def baixar_planilha_equipes():
+    session = SessionLocal()
+    try:
+        df = montar_planilha_equipes(session)
+
+        buffer = io.BytesIO()
+        with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+            df.to_excel(writer, index=False, sheet_name="Equipes")
+            planilha = writer.sheets["Equipes"]
+            for coluna in planilha.columns:
+                largura = max(
+                    len(str(celula.value)) if celula.value is not None else 0
+                    for celula in coluna
+                )
+                planilha.column_dimensions[coluna[0].column_letter].width = max(
+                    12, largura + 3
+                )
+            planilha.freeze_panes = "A2"
+
+        buffer.seek(0)
+        return send_file(
+            buffer,
+            mimetype=(
+                "application/vnd.openxmlformats-officedocument"
+                ".spreadsheetml.sheet"
+            ),
+            as_attachment=True,
+            download_name="equipes.xlsx",
+        )
+    except Exception as erro:
+        print(f"[ERRO] baixar_planilha_equipes: {erro}")
+        return jsonify({"erro": "Não foi possível gerar a planilha."}), 500
+    finally:
+        session.close()
+
+
+@app.route("/api/equipes/planilha/previa", methods=["POST"])
+def prever_planilha_equipes():
+    arquivo = request.files.get("arquivo")
+    if not arquivo:
+        return jsonify({"erro": "Arquivo não enviado."}), 400
+
+    session = SessionLocal()
+    try:
+        return jsonify(analisar_planilha_equipes(arquivo, session))
+    except ValueError as erro:
+        return jsonify({"erro": str(erro)}), 400
+    except Exception as erro:
+        print(f"[ERRO] prever_planilha_equipes: {erro}")
+        return jsonify({"erro": "Não foi possível analisar a planilha."}), 500
+    finally:
+        session.close()
+
+
+@app.route("/api/equipes/planilha/aplicar", methods=["POST"])
+def aplicar_planilha_equipes():
+    arquivo = request.files.get("arquivo")
+    if not arquivo:
+        return jsonify({"erro": "Arquivo não enviado."}), 400
+
+    session = SessionLocal()
+    try:
+        plano = analisar_planilha_equipes(arquivo, session)
+
+        if plano["erros"]:
+            return jsonify({
+                "erro": "A planilha tem linhas com problema. Corrija antes de aplicar.",
+                "plano": plano,
+            }), 400
+
+        criadas = set()
+
+        for item in plano["criar"]:
+            equipe_id = item["equipe_id"]
+            if equipe_id is None:
+                equipe = Equipe(BASE=item["base"], PREFIXO=item["prefixo"])
+                session.add(equipe)
+                session.flush()
+                equipe_id = equipe.id
+                criadas.add(equipe_id)
+                # outras linhas da mesma equipe (outra disciplina) reaproveitam o id
+                for outro in plano["criar"]:
+                    if (
+                        outro["equipe_id"] is None
+                        and normalizar(outro["base"]) == normalizar(item["base"])
+                        and normalizar(outro["prefixo"]) == normalizar(item["prefixo"])
+                    ):
+                        outro["equipe_id"] = equipe_id
+
+            for funcao, quantidade in item["vagas"].items():
+                for _ in range(quantidade):
+                    session.add(ComposicaoEquipe(
+                        equipe_id=equipe_id,
+                        FUNÇÃO_ER=funcao,
+                        ESTRUTURA=item["tipo"],
+                    ))
+
+        for item in plano["editar"]:
+            for mudanca in item["mudancas"]:
+                if "adicionar" in mudanca:
+                    for _ in range(mudanca["adicionar"]):
+                        session.add(ComposicaoEquipe(
+                            equipe_id=item["equipe_id"],
+                            FUNÇÃO_ER=mudanca["funcao"],
+                            ESTRUTURA=mudanca["tipo"],
+                        ))
+                    continue
+
+                for composicao_id in mudanca["ids"]:
+                    composicao = (
+                        session.query(ComposicaoEquipe)
+                        .filter(ComposicaoEquipe.id == composicao_id)
+                        .first()
+                    )
+                    if not composicao:
+                        continue
+
+                    if "retipar" in mudanca:
+                        # troca so a disciplina da vaga: id e colaborador ficam,
+                        # entao retipar uma vaga ocupada e seguro
+                        composicao.ESTRUTURA = mudanca["para"]
+                    elif not composicao.membro:
+                        session.delete(composicao)
+
+        for item in plano["excluir"]:
+            equipe = (
+                session.query(Equipe)
+                .filter(Equipe.id == item["equipe_id"])
+                .first()
+            )
+            if not equipe:
+                continue
+
+            for composicao in list(equipe.composicoes):
+                if tipo_equipe_da_vaga(composicao) == item["tipo"] and not composicao.membro:
+                    session.delete(composicao)
+
+            if item["apaga_equipe"]:
+                session.delete(equipe)
+
+        session.commit()
+
+        return jsonify({
+            "sucesso": True,
+            "criadas": len(plano["criar"]),
+            "editadas": len(plano["editar"]),
+            "excluidas": len(plano["excluir"]),
+            "ignoradas": plano["ignoradas"],
+        })
+    except ValueError as erro:
+        session.rollback()
+        return jsonify({"erro": str(erro)}), 400
+    except Exception as erro:
+        session.rollback()
+        print(f"[ERRO] aplicar_planilha_equipes: {erro}")
+        return jsonify({"erro": "Não foi possível aplicar a planilha."}), 500
     finally:
         session.close()
 

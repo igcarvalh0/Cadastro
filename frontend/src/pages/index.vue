@@ -1,62 +1,27 @@
 <template>
   <q-layout view="lHh Lpr lFf">
-    <q-header elevated class="site-header text-white">
-      <q-toolbar>
-        <div class="site-logo q-mr-sm">
-          <img src="/icons/favicon-128x128.png" alt="Logo" />
-        </div>
-
-        <q-toolbar-title> Gerenciador de Equipes </q-toolbar-title>
-
-        <q-btn
-          flat
-          round
-          dense
-          :icon="modoNoturno ? 'light_mode' : 'dark_mode'"
-          :aria-label="
-            modoNoturno ? 'Ativar modo claro' : 'Ativar modo noturno'
-          "
-          @click="alternarModoNoturno"
-        >
-          <q-tooltip>{{
-            modoNoturno ? 'Modo claro' : 'Modo noturno'
-          }}</q-tooltip>
-        </q-btn>
-
-        <q-btn flat label="Vagas" @click="irParaCadastroVagas" />
-
-        <q-btn flat label="Resumo" @click="irParaResumo" />
-      </q-toolbar>
-    </q-header>
+    <CabecalhoApp
+      titulo="Resumo"
+      :carregando="carregando"
+      @atualizar="carregarResumo"
+    />
 
     <q-page-container>
-      <q-page class="q-pa-md banco-page">
+      <q-page class="q-pa-sm resumo-page">
         <!-- ================================================== -->
         <!-- CABEÇALHO -->
         <!-- ================================================== -->
 
-        <div class="row items-center q-mb-md">
-          <div class="col">
-            <div class="text-h5"> Banco de Dados </div>
+        <div class="q-mb-md">
+          <div class="text-h5"> Resumo </div>
 
-            <div class="text-subtitle2 text-grey-7">
-              Gerenciamento de equipes e colaboradores
-            </div>
-          </div>
-
-          <div class="col-auto">
-            <q-btn
-              color="primary"
-              icon="refresh"
-              label="Atualizar"
-              :loading="carregando"
-              @click="carregarDados"
-            />
+          <div class="text-subtitle2 text-grey-7">
+            Resumo das equipes e colaboradores
           </div>
         </div>
 
         <!-- ================================================== -->
-        <!-- STATUS -->
+        <!-- ERRO -->
         <!-- ================================================== -->
 
         <q-banner v-if="erro" class="bg-red-1 text-negative q-mb-md" rounded>
@@ -72,7 +37,7 @@
             <div class="row items-center q-col-gutter-md">
               <div class="col-12 col-md-4">
                 <q-select
-                  :model-value="baseSelecionada"
+                  v-model="baseSelecionada"
                   :options="opcoesBases"
                   label="Base"
                   outlined
@@ -82,25 +47,44 @@
                   use-chips
                   emit-value
                   map-options
-                  @update:model-value="atualizarSelecaoBases"
+                />
+              </div>
+
+              <div class="col-12 col-md-3">
+                <q-select
+                  v-model="tipoSelecionado"
+                  :options="opcoesTipos"
+                  label="Tipo de equipe"
+                  outlined
+                  dense
+                  emit-value
+                  map-options
+                  @update:model-value="carregarResumo"
                 />
               </div>
 
               <div class="col-auto">
-                <q-chip color="primary" text-color="white">
-                  {{ equipesFiltradas.length }} equipes
-                </q-chip>
+                <div class="row q-gutter-xs">
+                  <q-chip
+                    v-for="grupo in totalExibido.grupos"
+                    :key="grupo.rotulo"
+                    text-color="white"
+                    :style="{ background: corDoTipo(grupo) }"
+                  >
+                    {{ grupo.equipes }} {{ rotuloCurto(grupo) }}
+                  </q-chip>
+                </div>
               </div>
 
               <div class="col-auto">
                 <q-chip color="positive" text-color="white">
-                  {{ colaboradoresAlocados }} alocados
+                  {{ totalExibido.alocados }} alocados
                 </q-chip>
               </div>
 
               <div class="col-auto">
                 <q-chip color="grey-7" text-color="white">
-                  {{ colaboradoresLivres }} livres
+                  {{ totalExibido.vagas }} vagas
                 </q-chip>
               </div>
             </div>
@@ -108,867 +92,1060 @@
         </q-card>
 
         <!-- ================================================== -->
-        <!-- CONTEÚDO -->
+        <!-- CARREGANDO -->
         <!-- ================================================== -->
 
         <div v-if="carregando" class="row justify-center q-pa-xl">
           <q-spinner color="primary" size="50px" />
         </div>
 
+        <!-- ================================================== -->
+        <!-- RESUMO -->
+        <!-- ================================================== -->
+
         <div v-else class="row q-col-gutter-md">
           <!-- ================================================= -->
-          <!-- EQUIPES -->
+          <!-- BASES -->
           <!-- ================================================= -->
 
-          <div class="col-12 col-lg-8">
-            <q-card bordered>
-              <q-card-section class="text-center">
-                <div class="text-h6"> Equipes </div>
+          <div class="col-12 resumo-composicao">
+            <div class="text-overline text-primary text-weight-bold q-mb-sm">
+              Composição das equipes
+            </div>
+
+            <q-card
+              v-for="base in basesExibidas"
+              :key="base.codigo"
+              bordered
+              class="q-mb-md"
+            >
+              <!-- =============================================== -->
+              <!-- CABEÇALHO DA BASE -->
+              <!-- =============================================== -->
+
+              <q-card-section>
+                <div class="row items-center q-col-gutter-sm">
+                  <div class="col">
+                    <div class="text-h6">
+                      {{ base.base }}
+                    </div>
+
+                    <div class="text-caption">
+                      Código: {{ base.codigo }} · {{ base.equipes }} equipe(s)
+                    </div>
+                  </div>
+
+                  <div class="col-auto">
+                    <div class="row q-gutter-xs justify-end">
+                      <q-chip
+                        v-for="grupo in base.grupos"
+                        :key="grupo.rotulo"
+                        size="sm"
+                        text-color="white"
+                        :style="{ background: corDoTipo(grupo) }"
+                      >
+                        {{ grupo.equipes }} {{ rotuloCurto(grupo) }}
+                      </q-chip>
+                    </div>
+                  </div>
+                </div>
               </q-card-section>
 
               <q-separator />
 
-              <q-list separator>
-                <q-expansion-item
-                  v-for="equipe in equipesFiltradas"
-                  :key="equipe.id"
-                  expand-separator
-                  :label="equipe.prefixo || 'Equipe'"
-                  :caption="equipe.base || ''"
-                  header-class="equipe-header"
-                  expand-icon="fiber_manual_record"
-                  expanded-icon="fiber_manual_record"
-                  :expand-icon-class="
-                    equipePreenchida(equipe) ? 'text-positive' : 'text-negative'
-                  "
-                >
-                  <q-card flat>
-                    <q-card-section>
-                      <div
-                        class="row items-center text-center text-caption text-grey-7 text-weight-medium q-pb-sm"
+              <!-- =============================================== -->
+              <!-- UM CARD POR DISCIPLINA -->
+              <!-- =============================================== -->
+
+              <q-card-section class="q-pa-none">
+                <q-markup-table flat square class="tabela-resumo">
+                  <thead>
+                    <tr>
+                      <th class="text-left">Equipe</th>
+                      <th class="text-left">Função</th>
+                      <th class="text-center">Vagas</th>
+                      <th class="text-center">Alocados</th>
+                      <th class="text-center">Diferença</th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    <template v-for="grupo in base.grupos" :key="grupo.rotulo">
+                      <tr
+                        v-for="(linha, indice) in grupo.funcoes"
+                        :key="grupo.rotulo + '-' + linha.funcao"
+                        :class="{ 'inicio-grupo': indice === 0 }"
                       >
-                        <div class="col-12 col-sm-2">CHAPA</div>
-                        <div class="col-12 col-sm-3">Colaborador</div>
-                        <div class="col-12 col-sm-2">Função cadastrada</div>
-                        <div class="col-12 col-sm-2">Vaga</div>
-                        <div class="col-12 col-sm-3">Status</div>
-                      </div>
-
-                      <div v-if="!equipe.vagas.length" class="text-grey-7">
-                        Nenhuma vaga cadastrada.
-                      </div>
-
-                      <div
-                        v-for="vaga in equipe.vagas"
-                        :key="vaga.id"
-                        class="row items-center text-center q-py-sm"
-                      >
-                        <div class="col-12 col-sm-2 text-caption">
-                          {{ vaga.colaborador?.chapa || '-' }}
-                        </div>
-
-                        <div class="col-12 col-sm-3">
-                          {{ vaga.colaborador?.nome || 'Vaga livre' }}
-                        </div>
-
-                        <div class="col-12 col-sm-2 text-caption">
-                          {{ vaga.colaborador?.funcao || '-' }}
-                        </div>
-
-                        <div class="col-12 col-sm-2 text-weight-medium">
-                          {{ vaga.funcao_er || 'Não informada' }}
-                        </div>
-
-                        <div
-                          class="col-12 col-sm-3 flex justify-center items-center"
+                        <!-- celula mesclada: aparece so na primeira linha do grupo -->
+                        <td
+                          v-if="indice === 0"
+                          :rowspan="grupo.funcoes.length"
+                          class="celula-grupo"
+                          :style="{ '--cor-grupo': corDoTipo(grupo) }"
                         >
-                          <q-chip
-                            v-if="vaga.colaborador"
-                            color="positive"
-                            text-color="white"
-                            size="sm"
+                          <span class="grupo-rotulo">{{ grupo.rotulo }}</span>
+                          <span class="grupo-detalhe">
+                            {{ grupo.equipes }} equipe(s) · {{ grupo.vagas }} vaga(s)
+                          </span>
+                        </td>
+
+                        <td class="text-left text-weight-medium">
+                          {{ linha.funcao }}
+                        </td>
+                        <td class="text-center">{{ linha.vagas }}</td>
+                        <td class="text-center">{{ linha.alocados }}</td>
+                        <td class="text-center">
+                          <span
+                            class="marcador-diferenca"
+                            :class="linha.diferenca < 0 ? 'negativa' : 'neutra'"
                           >
-                            ALOCADO
-                          </q-chip>
-
-                          <q-chip
-                            v-else
-                            color="grey-5"
-                            text-color="white"
-                            size="sm"
-                          >
-                            LIVRE
-                          </q-chip>
-
-                          <q-btn
-                            v-if="vaga.colaborador"
-                            flat
-                            round
-                            dense
-                            color="negative"
-                            icon="person_remove"
-                            class="q-ml-sm"
-                            aria-label="Remover colaborador"
-                            @click="removerColaborador(vaga.id)"
-                          />
-
-                          <q-btn
-                            v-else
-                            flat
-                            round
-                            dense
-                            color="primary"
-                            icon="person_add"
-                            class="q-ml-sm"
-                            aria-label="Alocar colaborador"
-                            @click="abrirAlocacaoParaVaga(equipe, vaga)"
-                          />
-                        </div>
-                      </div>
-                    </q-card-section>
-                  </q-card>
-                </q-expansion-item>
-              </q-list>
+                            {{ linha.diferenca }}
+                          </span>
+                        </td>
+                      </tr>
+                    </template>
+                  </tbody>
+                </q-markup-table>
+              </q-card-section>
             </q-card>
           </div>
 
           <!-- ================================================= -->
-          <!-- COLABORADORES -->
+          <!-- TOTAL GERAL -->
           <!-- ================================================= -->
 
-          <div class="col-12 col-lg-4">
+          <div class="col-12 resumo-lateral">
+            <div class="text-overline text-primary text-weight-bold q-mb-sm">
+              Indicadores gerais
+            </div>
+
             <q-card bordered>
-              <q-card-section class="text-center">
-                <div class="text-h6"> Colaboradores </div>
-              </q-card-section>
-
-              <q-separator />
-
               <q-card-section>
-                <div class="row q-col-gutter-sm q-mb-md">
-                  <div class="col">
-                    <q-input
-                      v-model="filtroColaborador"
-                      outlined
-                      dense
-                      clearable
-                      placeholder="Pesquisar por nome ou chapa..."
+                <div class="text-h6 q-mb-md">Total geral</div>
+
+                <div class="row q-col-gutter-md">
+                  <div
+                    v-for="indicador in indicadoresFuncoes"
+                    :key="indicador.funcao"
+                    class="col-12 col-sm-6"
+                  >
+                    <q-card
+                      flat
+                      bordered
+                      class="cursor-pointer"
+                      :class="
+                        indicador.diferenca < 0 ? 'bg-red-1' : 'bg-green-1'
+                      "
+                      @click="
+                        abrirNecessidades(
+                          indicador.funcao,
+                          '',
+                          indicador.diferenca < 0 ? 'deficit' : 'superavit'
+                        )
+                      "
                     >
-                      <template #prepend>
-                        <q-icon name="search" />
-                      </template>
-                    </q-input>
-                  </div>
+                      <q-card-section>
+                        <div class="text-caption text-grey-8">
+                          {{ indicador.funcao }}
+                        </div>
 
-                  <div class="col-auto">
-                    <q-btn
-                      :color="
-                        statusColaborador === 'TODOS' ? 'primary' : 'grey-7'
-                      "
-                      outline
-                      label="Todos"
-                      @click="statusColaborador = 'TODOS'"
-                    />
-                  </div>
-
-                  <div class="col-auto">
-                    <q-btn
-                      :color="
-                        statusColaborador === 'ALOCADOS' ? 'positive' : 'grey-7'
-                      "
-                      outline
-                      :label="`Alocados (${colaboradoresAlocados})`"
-                      @click="statusColaborador = 'ALOCADOS'"
-                    />
-                  </div>
-
-                  <div class="col-auto">
-                    <q-btn
-                      :color="
-                        statusColaborador === 'LIVRES' ? 'primary' : 'grey-7'
-                      "
-                      outline
-                      :label="`Livres (${colaboradoresLivres})`"
-                      @click="statusColaborador = 'LIVRES'"
-                    />
+                        <div
+                          class="text-h6"
+                          :class="
+                            indicador.diferenca < 0
+                              ? 'text-negative'
+                              : 'text-positive'
+                          "
+                        >
+                          {{
+                            indicador.diferenca < 0 ? 'Déficit' : 'Superávit'
+                          }}:
+                          {{ indicador.diferenca }}
+                        </div>
+                      </q-card-section>
+                    </q-card>
                   </div>
                 </div>
 
-                <q-list bordered separator class="rounded-borders">
-                  <q-item
-                    v-for="colaborador in colaboradoresFiltrados"
-                    :key="colaborador.chapa"
-                    clickable
-                    :disable="colaborador.alocado"
-                    @click="selecionarColaborador(colaborador)"
+                <!-- ============================================= -->
+                <!-- DIFERENÇA TOTAL -->
+                <!-- ============================================= -->
+
+                <div class="row justify-center q-mt-lg">
+                  <q-chip
+                    :color="
+                      totalExibido.diferenca < 0
+                        ? 'negative'
+                        : totalExibido.diferenca > 0
+                          ? 'positive'
+                          : 'grey-6'
+                    "
+                    text-color="white"
+                    size="lg"
                   >
-                    <q-item-section class="text-center">
-                      <q-item-label>
-                        {{ colaborador.nome }}
-                      </q-item-label>
-
-                      <q-item-label caption>
-                        {{ colaborador.funcao }}
-                      </q-item-label>
-
-                      <q-item-label caption>
-                        SEÇÃO: {{ colaborador.secao || 'Não informada' }}
-                      </q-item-label>
-                    </q-item-section>
-
-                    <q-item-section side class="text-center">
-                      <q-chip
-                        v-if="colaborador.alocado"
-                        color="positive"
-                        text-color="white"
-                        size="sm"
-                      >
-                        ALOCADO
-                      </q-chip>
-
-                      <q-chip
-                        v-else
-                        color="grey-6"
-                        text-color="white"
-                        size="sm"
-                      >
-                        LIVRE
-                      </q-chip>
-                    </q-item-section>
-                  </q-item>
-                </q-list>
+                    DIFERENÇA TOTAL:
+                    {{ totalExibido.diferenca }}
+                  </q-chip>
+                </div>
               </q-card-section>
             </q-card>
+
+            <q-card bordered class="q-mt-lg">
+              <q-card-section>
+                <div class="text-h6 q-mb-md">Pessoas alocadas</div>
+
+                <q-table
+                  flat
+                  bordered
+                  :rows="linhasDisponiveis"
+                  :columns="colunasDisponiveis"
+                  row-key="funcao"
+                  hide-pagination
+                  :rows-per-page-options="[0]"
+                >
+                  <template #body="props">
+                    <q-tr :props="props">
+                      <q-td key="funcao" :props="props">
+                        <q-btn
+                          flat
+                          dense
+                          color="primary"
+                          class="text-weight-medium"
+                          :label="props.row.funcao"
+                          @click="abrirDetalhes(props.row.funcao)"
+                        />
+                      </q-td>
+
+                      <q-td
+                        v-for="base in pessoasDisponiveisFiltradas"
+                        :key="base.codigo"
+                        :props="props"
+                        class="text-center"
+                      >
+                        <q-btn
+                          v-if="props.row[base.codigo]"
+                          flat
+                          dense
+                          color="primary"
+                          :label="String(props.row[base.codigo])"
+                          @click="abrirDetalhes(props.row.funcao, base.codigo)"
+                        />
+
+                        <span v-else>0</span>
+                      </q-td>
+
+                      <q-td key="total" :props="props" class="text-center">
+                        <q-btn
+                          v-if="props.row.total"
+                          flat
+                          dense
+                          color="primary"
+                          :label="String(props.row.total)"
+                          @click="abrirDetalhes(props.row.funcao)"
+                        />
+
+                        <span v-else>0</span>
+                      </q-td>
+                    </q-tr>
+                  </template>
+                </q-table>
+              </q-card-section>
+            </q-card>
+
+            <q-card bordered class="q-mt-lg">
+              <q-card-section>
+                <div class="text-h6 q-mb-md">Pessoas não alocadas</div>
+
+                <q-table
+                  flat
+                  bordered
+                  :rows="linhasNaoAlocadas"
+                  :columns="colunasNaoAlocadas"
+                  row-key="funcao"
+                  hide-pagination
+                  :rows-per-page-options="[0]"
+                >
+                  <template #body="props">
+                    <q-tr :props="props">
+                      <q-td key="funcao" :props="props">
+                        <q-btn
+                          flat
+                          dense
+                          color="primary"
+                          class="text-weight-medium"
+                          :label="props.row.funcao"
+                          @click="abrirNaoAlocados(props.row.funcao)"
+                        />
+                      </q-td>
+
+                      <q-td
+                        v-for="base in basesExibidas"
+                        :key="base.codigo"
+                        :props="props"
+                        class="text-center"
+                      >
+                        <q-btn
+                          v-if="props.row[base.codigo]"
+                          flat
+                          dense
+                          color="primary"
+                          :label="String(props.row[base.codigo])"
+                          @click="
+                            abrirNaoAlocados(props.row.funcao, base.codigo)
+                          "
+                        />
+
+                        <span v-else>0</span>
+                      </q-td>
+
+                      <q-td key="total" :props="props" class="text-center">
+                        <q-btn
+                          v-if="props.row.total"
+                          flat
+                          dense
+                          color="primary"
+                          :label="String(props.row.total)"
+                          @click="abrirNaoAlocados(props.row.funcao)"
+                        />
+
+                        <span v-else>0</span>
+                      </q-td>
+                    </q-tr>
+                  </template>
+                </q-table>
+              </q-card-section>
+            </q-card>
+
+            <q-dialog v-model="detalhesAbertos">
+              <q-card class="detalhes-disponiveis tabela-alocados">
+                <q-card-section class="row items-center q-pb-sm">
+                  <div class="text-h6">
+                    {{ detalheTitulo }}
+                  </div>
+
+                  <q-space />
+
+                  <q-btn
+                    color="positive"
+                    icon="download"
+                    label="Exportar Excel"
+                    @click="exportarAlocados"
+                  />
+
+                  <q-btn v-close-popup flat round dense icon="close" />
+                </q-card-section>
+
+                <q-separator />
+
+                <q-card-section>
+                  <q-table
+                    flat
+                    bordered
+                    dense
+                    class="tabela-exportavel"
+                    :rows="detalhesExibidos"
+                    :columns="colunasDetalhes"
+                    hide-pagination
+                    :rows-per-page-options="[0]"
+                    no-data-label="Nenhum colaborador encontrado"
+                  />
+                </q-card-section>
+              </q-card>
+            </q-dialog>
+
+            <q-dialog v-model="naoAlocadosAbertos">
+              <q-card class="detalhes-disponiveis tabela-nao-alocados">
+                <q-card-section class="row items-center q-pb-sm">
+                  <div class="text-h6">{{ naoAlocadosTitulo }}</div>
+
+                  <q-space />
+
+                  <q-btn
+                    color="positive"
+                    icon="download"
+                    label="Exportar Excel"
+                    @click="exportarNaoAlocados"
+                  />
+
+                  <q-btn v-close-popup flat round dense icon="close" />
+                </q-card-section>
+
+                <q-separator />
+
+                <q-card-section>
+                  <q-table
+                    flat
+                    bordered
+                    dense
+                    :rows="naoAlocadosDetalhesExibidos"
+                    :columns="colunasNaoAlocadosDetalhes"
+                    hide-pagination
+                    :rows-per-page-options="[0]"
+                    no-data-label="Nenhum colaborador encontrado"
+                  />
+                </q-card-section>
+              </q-card>
+            </q-dialog>
+
+            <q-dialog v-model="necessidadesAbertas">
+              <q-card class="detalhes-disponiveis tabela-necessidades">
+                <q-card-section class="row items-center q-pb-sm">
+                  <div class="text-h6">{{ necessidadeTitulo }}</div>
+
+                  <q-space />
+
+                  <q-btn v-close-popup flat round dense icon="close" />
+                </q-card-section>
+
+                <q-separator />
+
+                <q-card-section>
+                  <q-table
+                    flat
+                    bordered
+                    dense
+                    :rows="necessidadesExibidas"
+                    :columns="colunasNecessidades"
+                    hide-pagination
+                    :rows-per-page-options="[0]"
+                    no-data-label="Nenhuma necessidade encontrada"
+                  />
+                </q-card-section>
+              </q-card>
+            </q-dialog>
           </div>
         </div>
       </q-page>
     </q-page-container>
-
-    <q-dialog v-model="dialogAlocacao">
-      <q-card style="min-width: 500px; max-width: 90vw">
-        <q-card-section>
-          <div class="text-h6"> Alocar colaborador </div>
-
-          <div
-            v-if="colaboradorSelecionado"
-            class="text-subtitle2 text-grey-7 q-mt-sm"
-          >
-            {{ colaboradorSelecionado.chapa }}
-            -
-            {{ colaboradorSelecionado.nome }}
-          </div>
-        </q-card-section>
-
-        <q-separator />
-
-        <q-card-section>
-          <q-select
-            v-model="colaboradorSelecionado"
-            :options="colaboradoresLivresAlocacao"
-            label="Colaborador"
-            outlined
-            dense
-            use-input
-            clearable
-            option-label="nome"
-            input-debounce="0"
-            class="q-mb-md"
-            hint="Pesquise pelo nome ou pela CHAPA"
-            @filter="filtrarColaboradoresAlocacao"
-          >
-            <template #option="scope">
-              <q-item v-bind="scope.itemProps">
-                <q-item-section>
-                  <q-item-label>{{ scope.opt.nome }}</q-item-label>
-                  <q-item-label caption>
-                    CHAPA: {{ scope.opt.chapa }} |
-                    {{ scope.opt.funcao || 'Função não informada' }}
-                  </q-item-label>
-                </q-item-section>
-              </q-item>
-            </template>
-          </q-select>
-
-          <q-select
-            v-model="baseAlocacao"
-            :options="basesAlocacao"
-            label="Base"
-            outlined
-            dense
-            emit-value
-            map-options
-            clearable
-            @update:model-value="limparEquipeAlocacao"
-          />
-
-          <q-select
-            v-if="baseAlocacao"
-            v-model="equipeAlocacao"
-            :options="equipesAlocacao"
-            label="Equipe"
-            outlined
-            dense
-            emit-value
-            map-options
-            clearable
-            class="q-mt-md"
-            @update:model-value="limparVagaAlocacao"
-          />
-
-          <q-select
-            v-if="equipeAlocacao"
-            v-model="vagaAlocacao"
-            :options="vagasAlocacao"
-            label="Vaga"
-            outlined
-            dense
-            emit-value
-            map-options
-            clearable
-            class="q-mt-md"
-          />
-        </q-card-section>
-
-        <q-card-actions align="right">
-          <q-btn flat label="Cancelar" v-close-popup />
-
-          <q-btn
-            color="primary"
-            label="Alocar"
-            :loading="carregandoAlocacao"
-            :disable="!vagaAlocacao"
-            @click="alocarColaborador"
-          />
-        </q-card-actions>
-      </q-card>
-    </q-dialog>
   </q-layout>
 </template>
 
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
 
-import { useRouter } from 'vue-router'
-import { useModoNoturno } from '../composables/useModoNoturno'
+import CabecalhoApp from '../components/CabecalhoApp.vue'
 
-const router = useRouter()
-const { modoNoturno, alternarModoNoturno, restaurarModoNoturno } = useModoNoturno()
+// mantem /resumo valendo como atalho para a tela principal
+definePage({ alias: '/resumo' })
 
 // ============================================================
 // ESTADO
 // ============================================================
 
-const equipes = ref([])
+const bases = ref([])
 
-const colaboradores = ref([])
+const total = ref({
+  equipes: {
+    CONSTRUÇÃO: 0,
+
+    FOLGUISTA: 0
+  },
+
+  vagas: 0,
+
+  alocados: 0,
+
+  diferenca: 0
+})
+
+const basesFiltro = ref([])
+
+const baseSelecionada = ref([])
+const tipoSelecionado = ref('')
+const tiposFiltro = ref([])
 
 const carregando = ref(false)
 
 const erro = ref('')
 
-const baseSelecionada = ref([])
+const pessoasDisponiveis = ref([])
 
-const filtroColaborador = ref('')
-const statusColaborador = ref('TODOS')
-const colaboradoresLivresAlocacao = ref([])
+const pessoasNaoAlocadas = ref([])
 
-const opcoesAlocacao = ref({})
-const colaboradorSelecionado = ref(null)
-const dialogAlocacao = ref(false)
-const carregandoAlocacao = ref(false)
+const naoAlocadosAbertos = ref(false)
 
-const baseAlocacao = ref(null)
-const equipeAlocacao = ref(null)
-const vagaAlocacao = ref(null)
-
-const basesAlocacao = computed(() => {
-  return Object.keys(opcoesAlocacao.value)
-    .sort((a, b) => a.localeCompare(b, 'pt-BR'))
-    .map(base => ({
-      label: base,
-      value: base
-    }))
+const naoAlocadosSelecionados = ref({
+  funcao: '',
+  codigo: ''
 })
 
-const equipesAlocacao = computed(() => {
-  if (!baseAlocacao.value) {
-    return []
-  }
+const detalhesAbertos = ref(false)
 
-  return (opcoesAlocacao.value[baseAlocacao.value] || [])
-    .map(equipe => ({
-      label: equipe.prefixo || 'Equipe sem prefixo',
-      value: equipe.id
-    }))
-    .sort((a, b) => a.label.localeCompare(b.label, 'pt-BR'))
+const detalheSelecionado = ref({
+  funcao: '',
+  codigo: ''
 })
 
-const vagasAlocacao = computed(() => {
-  if (!baseAlocacao.value || !equipeAlocacao.value) {
-    return []
-  }
+const necessidadesAbertas = ref(false)
 
-  const equipe = (opcoesAlocacao.value[baseAlocacao.value] || []).find(
-    item => String(item.id) === String(equipeAlocacao.value)
-  )
+const necessidadeSelecionada = ref({
+  funcao: '',
+  codigo: '',
+  tipo: 'deficit'
+})
 
-  if (!equipe) {
-    return []
-  }
+// ============================================================
+// COLUNAS
+// ============================================================
 
-  return (equipe.vagas || []).map(vaga => ({
-    label:
-      [vaga.funcao_er, vaga.estrutura].filter(Boolean).join(' | ') ||
-      'Função não informada',
-    value: vaga.id
+
+// ============================================================
+// OPÇÕES DE BASE
+// ============================================================
+
+const opcoesTipos = computed(() => [
+  { label: 'Todos os tipos', value: '' },
+  ...tiposFiltro.value.map(tipo => ({ label: tipo, value: tipo }))
+])
+
+const opcoesBases = computed(() => {
+  return basesFiltro.value.map(item => ({
+    label: `${item.base} (${item.codigo})`,
+
+    value: item.base
   }))
 })
 
-// ============================================================
-// BASES
-// ============================================================
-
-const OPCAO_TODAS_BASES = '__TODAS_BASES__'
-
-const CODIGOS_BASES = {
-  BACABAL: 'BCB',
-  ITAPECURU: 'ITM',
-  'ITAPECURU MIRIM': 'ITM',
-  'SANTA INES': 'STI',
-  'SPOT STI': 'SPOT STI',
-  PEDREIRAS: 'PDS',
-  'PRES DUTRA': 'PDT',
-  'PRESIDENTE DUTRA': 'PDT',
-  'BARRA DO CORDA': 'BDC'
-}
-
-function normalizarSelecaoBases(bases) {
-  if (!Array.isArray(bases)) {
-    return []
-  }
-
-  const valores = [...new Set(bases.filter(Boolean))]
-
-  if (valores.includes(OPCAO_TODAS_BASES)) {
-    return [OPCAO_TODAS_BASES]
-  }
-
-  return valores
-}
-
-function equipePreenchida(equipe) {
-  const vagas = equipe.vagas || []
-
-  return vagas.length > 0 && vagas.every(vaga => Boolean(vaga.colaborador))
-}
-
-function atualizarSelecaoBases(bases) {
-  const selecao = Array.isArray(bases) ? bases : []
-
+const basesExibidas = computed(() => {
   if (
-    selecao.includes(OPCAO_TODAS_BASES) &&
-    baseSelecionada.value.includes(OPCAO_TODAS_BASES) &&
-    selecao.length > 1
+    !baseSelecionada.value.length ||
+    baseSelecionada.value.includes('__TODAS_BASES__')
   ) {
-    baseSelecionada.value = selecao.filter(base => base !== OPCAO_TODAS_BASES)
-    return
+    return bases.value
   }
 
-  baseSelecionada.value = normalizarSelecaoBases(selecao)
+  return bases.value.filter(base => baseSelecionada.value.includes(base.base))
+})
+
+const totalExibido = computed(() => {
+  const grupos = new Map()
+  let vagas = 0
+  let alocados = 0
+
+  for (const base of basesExibidas.value) {
+    for (const grupo of base.grupos || []) {
+      const atual = grupos.get(grupo.rotulo) || {
+        rotulo: grupo.rotulo,
+        tipo: grupo.tipo,
+        folguista: grupo.folguista,
+        equipes: 0
+      }
+      atual.equipes += grupo.equipes || 0
+      grupos.set(grupo.rotulo, atual)
+
+      vagas += grupo.vagas || 0
+      alocados += grupo.alocados || 0
+    }
+  }
+
+  return {
+    grupos: [...grupos.values()],
+    vagas,
+    alocados,
+    diferenca: alocados - vagas
+  }
+})
+
+// a cor identifica a disciplina de forma consistente entre chips e cards
+const CORES_TIPO = {
+  'CONSTRUÇÃO': 'var(--tipo-construcao)',
+  'PODA': 'var(--tipo-poda)',
+  'LINHA VIVA': 'var(--tipo-linha-viva)',
+  'TAT': 'var(--tipo-tat)'
 }
 
-const opcoesBases = computed(() => {
-  const bases = [
+function corDoTipo(grupo) {
+  if (grupo.folguista) {
+    return 'var(--tipo-folguista)'
+  }
+  return CORES_TIPO[grupo.tipo] || 'var(--tipo-outro)'
+}
+
+function rotuloCurto(grupo) {
+  return grupo.rotulo.toLowerCase()
+}
+const funcoesDisponiveis = [
+  'ENCARREGADO',
+  'ELETRICISTA',
+  'MOTORISTA',
+  'AUXILIAR DE ELETRICISTA'
+]
+
+function funcaoResumo(funcao) {
+  const valor = String(funcao || '')
+    .trim()
+    .toUpperCase()
+
+  if (valor === 'ENCARREGADO') {
+    return 'ENCARREGADO'
+  }
+
+  if (valor === 'ELETRICISTA') {
+    return 'ELETRICISTA'
+  }
+
+  if (valor === 'MUNQUEIRO/MOTORISTA' || valor === 'MOTORISTA') {
+    return 'MOTORISTA'
+  }
+
+  if (valor === 'AUXILIAR ELETRICISTA' || valor === 'AUXILIAR DE ELETRICISTA') {
+    return 'AUXILIAR DE ELETRICISTA'
+  }
+
+  return valor
+}
+
+const colunasDisponiveis = computed(() => {
+  const colunas = [
     {
-      label: 'Todas as bases',
-      value: OPCAO_TODAS_BASES
+      name: 'funcao',
+      label: 'FUNÇÃO',
+      field: 'funcao',
+      align: 'left'
     }
   ]
 
-  for (const equipe of equipes.value) {
-    const base = String(equipe.base || '').trim()
-
-    if (!base) {
-      continue
-    }
-
-    if (!bases.some(item => item.value === base)) {
-      const codigo = CODIGOS_BASES[base]
-      bases.push({
-        label: codigo ? `${base} (${codigo})` : base,
-        value: base
-      })
-    }
+  for (const base of pessoasDisponiveisFiltradas.value) {
+    colunas.push({
+      name: base.codigo,
+      label: base.codigo,
+      field: linha => linha[base.codigo] || 0,
+      align: 'center'
+    })
   }
 
-  return bases.sort((a, b) => {
-    if (a.value === OPCAO_TODAS_BASES) return -1
-    if (b.value === OPCAO_TODAS_BASES) return 1
-    return a.label.localeCompare(b.label, 'pt-BR')
+  colunas.push({
+    name: 'total',
+    label: 'TOTAL GERAL',
+    field: 'total',
+    align: 'center'
+  })
+
+  return colunas
+})
+
+const colunasNaoAlocadosDetalhes = [
+  {
+    name: 'chapa',
+    label: 'CHAPA',
+    field: 'chapa',
+    align: 'left'
+  },
+  {
+    name: 'nome',
+    label: 'COLABORADOR',
+    field: 'nome',
+    align: 'left'
+  },
+  {
+    name: 'funcao',
+    label: 'FUNÇÃO NO SISTEMA',
+    field: 'funcao',
+    align: 'left'
+  },
+  {
+    name: 'secao',
+    label: 'SEÇÃO',
+    field: 'secao',
+    align: 'left'
+  },
+  {
+    name: 'codigo',
+    label: 'BASE',
+    field: 'codigo',
+    align: 'center'
+  }
+]
+
+const colunasNaoAlocadas = computed(() => {
+  const colunas = [
+    {
+      name: 'funcao',
+      label: 'FUNÇÃO',
+      field: 'funcao',
+      align: 'left'
+    }
+  ]
+
+  for (const base of basesExibidas.value) {
+    colunas.push({
+      name: base.codigo,
+      label: base.codigo,
+      field: linha => linha[base.codigo] || 0,
+      align: 'center'
+    })
+  }
+
+  colunas.push({
+    name: 'total',
+    label: 'TOTAL GERAL',
+    field: 'total',
+    align: 'center'
+  })
+
+  return colunas
+})
+
+const colunasDetalhes = [
+  {
+    name: 'base',
+    label: 'BASE',
+    field: 'base',
+    align: 'left'
+  },
+  {
+    name: 'equipe',
+    label: 'EQUIPE',
+    field: 'equipe',
+    align: 'left'
+  },
+  {
+    name: 'chapa',
+    label: 'CHAPA',
+    field: 'chapa',
+    align: 'left'
+  },
+  {
+    name: 'nome',
+    label: 'COLABORADOR',
+    field: 'nome',
+    align: 'left'
+  },
+  {
+    name: 'funcao_sistema',
+    label: 'FUNÇÃO NO SISTEMA',
+    field: 'funcao_sistema',
+    align: 'left'
+  },
+  {
+    name: 'vaga',
+    label: 'VAGA',
+    field: 'vaga',
+    align: 'left'
+  }
+]
+
+const colunasNecessidades = [
+  {
+    name: 'base',
+    label: 'BASE',
+    field: 'base',
+    align: 'left'
+  },
+  {
+    name: 'equipe',
+    label: 'EQUIPE',
+    field: 'equipe',
+    align: 'left'
+  },
+  {
+    name: 'vaga',
+    label: 'VAGA',
+    field: 'vaga',
+    align: 'left'
+  },
+  {
+    name: 'quantidade',
+    label: 'QUANTIDADE',
+    field: 'quantidade',
+    align: 'center'
+  }
+]
+
+const linhasDisponiveis = computed(() => {
+  return funcoesDisponiveis.map(funcao => {
+    const linha = { funcao, total: 0 }
+
+    for (const base of pessoasDisponiveisFiltradas.value) {
+      const quantidade = base.funcoes?.[funcao] || 0
+      linha[base.codigo] = quantidade
+      linha.total += quantidade
+    }
+
+    return linha
   })
 })
 
-// ============================================================
-// EQUIPES FILTRADAS
-// ============================================================
+const necessidadePorFuncao = computed(() => {
+  return basesExibidas.value.reduce((acumulado, base) => {
+    for (const linha of (base.grupos || []).flatMap(g => g.funcoes || [])) {
+      if (!acumulado[linha.funcao]) {
+        acumulado[linha.funcao] = {
+          vagas: 0,
+          alocados: 0
+        }
+      }
 
-const equipesFiltradas = computed(() => {
-  const equipesVisiveis =
-    !baseSelecionada.value.length ||
-    baseSelecionada.value.includes(OPCAO_TODAS_BASES)
-      ? equipes.value
-      : equipes.value.filter(equipe => {
-          const base = String(equipe.base || '').trim()
-          return baseSelecionada.value.includes(base)
-        })
-
-  return [...equipesVisiveis].sort((a, b) => {
-    const baseA = String(a.base || '').trim()
-    const baseB = String(b.base || '').trim()
-    const comparacaoBase = baseA.localeCompare(baseB, 'pt-BR')
-
-    if (comparacaoBase !== 0) {
-      return comparacaoBase
+      acumulado[linha.funcao].vagas += linha.vagas || 0
+      acumulado[linha.funcao].alocados += linha.alocados || 0
     }
 
-    const prefixoA = String(a.prefixo || '').trim()
-    const prefixoB = String(b.prefixo || '').trim()
-    const tipoA = prefixoA.toUpperCase() === 'FOLGUISTA' ? 1 : 0
-    const tipoB = prefixoB.toUpperCase() === 'FOLGUISTA' ? 1 : 0
+    return acumulado
+  }, {})
+})
 
-    if (tipoA !== tipoB) {
-      return tipoA - tipoB
+const indicadoresFuncoes = computed(() => {
+  return funcoesDisponiveis.map(funcao => {
+    const necessidade = necessidadePorFuncao.value[funcao] || {
+      vagas: 0,
+      alocados: 0
     }
 
-    return prefixoA.localeCompare(prefixoB, 'pt-BR')
+    return {
+      funcao,
+      diferenca: necessidade.alocados - necessidade.vagas
+    }
   })
 })
 
-// ============================================================
-// COLABORADORES FILTRADOS
-// ============================================================
+const pessoasNaoAlocadasFiltradas = computed(() => {
+  const codigosBases = new Set(basesExibidas.value.map(base => base.codigo))
 
-const colaboradoresBase = computed(() => {
-  if (
-    !baseSelecionada.value.length ||
-    baseSelecionada.value.includes(OPCAO_TODAS_BASES)
-  ) {
-    return colaboradores.value
-  }
-
-  return colaboradores.value.filter(colaborador =>
-    baseSelecionada.value.some(
-      base =>
-        base === colaborador.base ||
-        CODIGOS_BASES[base] === colaborador.codigo_base
-    )
+  return pessoasNaoAlocadas.value.filter(pessoa =>
+    codigosBases.has(pessoa.codigo)
   )
 })
 
-const colaboradoresFiltrados = computed(() => {
-  const filtro = filtroColaborador.value.trim().toLowerCase()
+const linhasNaoAlocadas = computed(() => {
+  return funcoesDisponiveis.map(funcao => {
+    const linha = { funcao, total: 0 }
 
-  return colaboradoresBase.value.filter(colaborador => {
-    const correspondeStatus =
-      statusColaborador.value === 'TODOS' ||
-      (statusColaborador.value === 'ALOCADOS' && colaborador.alocado) ||
-      (statusColaborador.value === 'LIVRES' && !colaborador.alocado)
+    for (const base of basesExibidas.value) {
+      const quantidade = pessoasNaoAlocadasFiltradas.value.filter(
+        pessoa =>
+          pessoa.codigo === base.codigo &&
+          funcaoResumo(pessoa.funcao) === funcao
+      ).length
 
-    const correspondeTexto =
-      !filtro ||
-      String(colaborador.nome || '')
-        .toLowerCase()
-        .includes(filtro) ||
-      String(colaborador.chapa || '')
-        .toLowerCase()
-        .includes(filtro) ||
-      String(colaborador.funcao || '')
-        .toLowerCase()
-        .includes(filtro)
+      linha[base.codigo] = quantidade
+      linha.total += quantidade
+    }
 
-    return correspondeStatus && correspondeTexto
+    return linha
   })
 })
 
-// ============================================================
-// CONTADORES
-// ============================================================
-
-const colaboradoresAlocados = computed(() => {
-  return colaboradoresBase.value.filter(colaborador => colaborador.alocado)
-    .length
+const naoAlocadosDetalhesExibidos = computed(() => {
+  return pessoasNaoAlocadasFiltradas.value.filter(
+    pessoa =>
+      funcaoResumo(pessoa.funcao) === naoAlocadosSelecionados.value.funcao &&
+      (!naoAlocadosSelecionados.value.codigo ||
+        pessoa.codigo === naoAlocadosSelecionados.value.codigo)
+  )
 })
 
-const colaboradoresLivres = computed(() => {
-  return colaboradoresBase.value.filter(colaborador => !colaborador.alocado)
-    .length
+const naoAlocadosTitulo = computed(() => {
+  if (naoAlocadosSelecionados.value.codigo) {
+    return `${naoAlocadosSelecionados.value.funcao} em ${naoAlocadosSelecionados.value.codigo}`
+  }
+
+  return `${naoAlocadosSelecionados.value.funcao} em todas as bases`
 })
 
+const necessidadesExibidas = computed(() => {
+  return basesExibidas.value
+    .filter(
+      base =>
+        !necessidadeSelecionada.value.codigo ||
+        base.codigo === necessidadeSelecionada.value.codigo
+    )
+    .flatMap(base =>
+      (base.grupos || [])
+        .flatMap(grupo =>
+          (grupo.funcoes || []).map(item => ({ ...item, equipe: grupo.rotulo }))
+        )
+        .filter(item => item.funcao === necessidadeSelecionada.value.funcao)
+        .map((item, indice) => {
+          const diferenca = item.alocados - item.vagas
+
+          return {
+            id: `${base.codigo}-${item.equipe}-${indice}`,
+            base: base.codigo,
+            equipe: item.equipe,
+            vaga: item.funcao,
+            quantidade:
+              necessidadeSelecionada.value.tipo === 'superavit'
+                ? Math.max(diferenca, 0)
+                : Math.max(-diferenca, 0)
+          }
+        })
+        .filter(item => item.quantidade > 0)
+    )
+})
+
+const necessidadeTitulo = computed(() => {
+  if (necessidadeSelecionada.value.codigo) {
+    return `${necessidadeSelecionada.value.funcao} em ${necessidadeSelecionada.value.codigo}`
+  }
+
+  const tipo =
+    necessidadeSelecionada.value.tipo === 'superavit'
+      ? 'Superávit de'
+      : 'Déficit de'
+
+  return `${tipo} ${necessidadeSelecionada.value.funcao}`
+})
+
+const pessoasDisponiveisFiltradas = computed(() => {
+  if (!baseSelecionada.value.length) {
+    return pessoasDisponiveis.value
+  }
+
+  return pessoasDisponiveis.value.filter(base =>
+    baseSelecionada.value.includes(base.base)
+  )
+})
+
+const detalhesExibidos = computed(() => {
+  return pessoasDisponiveisFiltradas.value
+    .filter(
+      base =>
+        !detalheSelecionado.value.codigo ||
+        base.codigo === detalheSelecionado.value.codigo
+    )
+    .flatMap(base => base.detalhes?.[detalheSelecionado.value.funcao] || [])
+})
+
+const detalheTitulo = computed(() => {
+  if (detalheSelecionado.value.codigo) {
+    return `${detalheSelecionado.value.funcao} em ${detalheSelecionado.value.codigo}`
+  }
+
+  return `${detalheSelecionado.value.funcao} em todas as bases`
+})
+
+function abrirDetalhes(funcao, codigo = '') {
+  detalheSelecionado.value = { funcao, codigo }
+  detalhesAbertos.value = true
+}
+
+function abrirNaoAlocados(funcao, codigo = '') {
+  naoAlocadosSelecionados.value = { funcao, codigo }
+  naoAlocadosAbertos.value = true
+}
+
+function abrirNecessidades(funcao, codigo = '', tipo = 'deficit') {
+  necessidadeSelecionada.value = { funcao, codigo, tipo }
+  necessidadesAbertas.value = true
+}
+
+function escaparCsv(valor) {
+  return `"${String(valor ?? '').replaceAll('"', '""')}"`
+}
+
+function exportarAlocados() {
+  const cabecalho = [
+    'BASE',
+    'EQUIPE',
+    'CHAPA',
+    'COLABORADOR',
+    'FUNÇÃO NO SISTEMA',
+    'VAGA'
+  ]
+
+  const linhas = detalhesExibidos.value.map(colaborador => [
+    colaborador.base,
+    colaborador.equipe,
+    colaborador.chapa,
+    colaborador.nome,
+    colaborador.funcao_sistema,
+    colaborador.vaga
+  ])
+
+  const csv = [cabecalho, ...linhas]
+    .map(linha => linha.map(escaparCsv).join(';'))
+    .join('\r\n')
+  const arquivo = new Blob([`\ufeff${csv}`], {
+    type: 'text/csv;charset=utf-8;'
+  })
+  const url = URL.createObjectURL(arquivo)
+  const link = document.createElement('a')
+
+  link.href = url
+  link.download = `pessoas-alocadas-${detalheSelecionado.value.funcao.toLowerCase()}.csv`
+  link.click()
+  URL.revokeObjectURL(url)
+}
+
+function exportarNaoAlocados() {
+  const cabecalho = [
+    'CHAPA',
+    'COLABORADOR',
+    'FUNÇÃO NO SISTEMA',
+    'SEÇÃO',
+    'BASE'
+  ]
+  const linhas = naoAlocadosDetalhesExibidos.value.map(colaborador => [
+    colaborador.chapa,
+    colaborador.nome,
+    colaborador.funcao,
+    colaborador.secao,
+    colaborador.base
+  ])
+  const csv = [cabecalho, ...linhas]
+    .map(linha => linha.map(escaparCsv).join(';'))
+    .join('\r\n')
+  const arquivo = new Blob([`\ufeff${csv}`], {
+    type: 'text/csv;charset=utf-8;'
+  })
+  const url = URL.createObjectURL(arquivo)
+  const link = document.createElement('a')
+
+  link.href = url
+  link.download = `pessoas-nao-alocadas-${naoAlocadosSelecionados.value.funcao.toLowerCase()}.csv`
+  link.click()
+  URL.revokeObjectURL(url)
+}
+
 // ============================================================
-// CARREGAR DADOS
+// CARREGAR RESUMO
 // ============================================================
 
-async function carregarDados() {
+async function carregarResumo() {
   carregando.value = true
 
   erro.value = ''
 
   try {
-    const [respostaEquipes, respostaColaboradores] = await Promise.all([
-      fetch('/api/equipes'),
-
-      fetch('/api/colaboradores')
-    ])
-
-    if (!respostaEquipes.ok) {
-      throw new Error('Erro ao carregar equipes.')
+    const parametros = new URLSearchParams()
+    if (tipoSelecionado.value) {
+      parametros.set('tipo', tipoSelecionado.value)
     }
 
-    if (!respostaColaboradores.ok) {
-      throw new Error('Erro ao carregar colaboradores.')
+    const resposta = await fetch(`/api/resumo?${parametros}`)
+
+    if (!resposta.ok) {
+      throw new Error('Erro ao carregar resumo.')
     }
 
-    const dadosEquipes = await respostaEquipes.json()
+    const dados = await resposta.json()
 
-    const dadosColaboradores = await respostaColaboradores.json()
-
-    if (dadosEquipes.erro) {
-      throw new Error(dadosEquipes.erro)
+    if (dados.erro) {
+      throw new Error(dados.erro)
     }
 
-    if (dadosColaboradores.erro) {
-      throw new Error(dadosColaboradores.erro)
+    bases.value = dados.bases || []
+
+    total.value = dados.total || {
+      grupos: [],
+      equipes: 0,
+      vagas: 0,
+      alocados: 0,
+      diferenca: 0
     }
 
-    equipes.value = dadosEquipes
+    basesFiltro.value = dados.bases_filtro || []
+    tiposFiltro.value = dados.tipos_filtro || []
 
-    colaboradores.value = dadosColaboradores
+    pessoasDisponiveis.value = dados.pessoas_disponiveis || []
 
-    const respostaOpcoes = await fetch('/api/opcoes-alocacao')
-
-    if (!respostaOpcoes.ok) {
-      throw new Error('Erro ao carregar opções de alocação.')
-    }
-
-    const dadosOpcoes = await respostaOpcoes.json()
-
-    if (dadosOpcoes.erro) {
-      throw new Error(dadosOpcoes.erro)
-    }
-
-    opcoesAlocacao.value = dadosOpcoes
+    pessoasNaoAlocadas.value = dados.pessoas_nao_alocadas || []
   } catch (e) {
     console.error(e)
 
-    erro.value = e.message || 'Erro ao carregar dados.'
+    erro.value = e.message || 'Erro ao carregar resumo.'
   } finally {
     carregando.value = false
-  }
-}
-
-// ============================================================
-// NAVEGAR PARA RESUMO
-// ============================================================
-
-function irParaResumo() {
-  router.push('/resumo')
-}
-
-function irParaCadastroVagas() {
-  router.push('/cadastro-vagas')
-}
-
-function selecionarColaborador(colaborador) {
-  if (colaborador.alocado) {
-    return
-  }
-
-  colaboradorSelecionado.value = colaborador
-  colaboradoresLivresAlocacao.value = colaboradores.value.filter(
-    item => !item.alocado
-  )
-
-  dialogAlocacao.value = true
-}
-
-function abrirAlocacaoParaVaga(equipe, vaga) {
-  colaboradorSelecionado.value = null
-  baseAlocacao.value = equipe.base
-  equipeAlocacao.value = equipe.id
-  vagaAlocacao.value = vaga.id
-  colaboradoresLivresAlocacao.value = colaboradores.value.filter(
-    colaborador => !colaborador.alocado
-  )
-  dialogAlocacao.value = true
-}
-
-function filtrarColaboradoresAlocacao(valor, atualizar) {
-  atualizar(() => {
-    const filtro = String(valor || '')
-      .trim()
-      .toLowerCase()
-
-    colaboradoresLivresAlocacao.value = colaboradores.value.filter(
-      colaborador => {
-        return (
-          !colaborador.alocado &&
-          (!filtro ||
-            String(colaborador.nome || '')
-              .toLowerCase()
-              .includes(filtro) ||
-            String(colaborador.chapa || '')
-              .toLowerCase()
-              .includes(filtro))
-        )
-      }
-    )
-  })
-}
-
-function limparEquipeAlocacao() {
-  equipeAlocacao.value = null
-  vagaAlocacao.value = null
-}
-
-function limparVagaAlocacao() {
-  vagaAlocacao.value = null
-}
-
-function localizarVaga(composicaoId) {
-  for (const equipe of equipes.value) {
-    const vaga = (equipe.vagas || []).find(
-      item => String(item.id) === String(composicaoId)
-    )
-
-    if (vaga) {
-      return vaga
-    }
-  }
-
-  return null
-}
-
-function atualizarEstadoAposAlocacao(composicaoId, colaborador) {
-  const vaga = localizarVaga(composicaoId)
-
-  if (vaga) {
-    vaga.colaborador = {
-      ...colaborador,
-      alocado: true
-    }
-    vaga.ocupada = true
-  }
-
-  const colaboradorLista = colaboradores.value.find(
-    item => item.chapa === colaborador.chapa
-  )
-
-  if (colaboradorLista) {
-    colaboradorLista.alocado = true
-  }
-
-  for (const equipe of Object.values(opcoesAlocacao.value)) {
-    const equipeAlocacaoAtual = equipe.find(item =>
-      (item.vagas || []).some(
-        vagaItem => String(vagaItem.id) === String(composicaoId)
-      )
-    )
-
-    if (equipeAlocacaoAtual) {
-      equipeAlocacaoAtual.vagas = equipeAlocacaoAtual.vagas.filter(
-        vagaItem => String(vagaItem.id) !== String(composicaoId)
-      )
-      break
-    }
-  }
-}
-
-function atualizarEstadoAposRemocao(chapa, composicaoId) {
-  const vaga = localizarVaga(composicaoId)
-
-  if (vaga) {
-    vaga.colaborador = null
-    vaga.ocupada = false
-  }
-
-  const colaborador = colaboradores.value.find(item => item.chapa === chapa)
-
-  if (colaborador) {
-    colaborador.alocado = false
-  }
-}
-
-async function alocarColaborador() {
-  if (!colaboradorSelecionado.value || !vagaAlocacao.value) {
-    return
-  }
-
-  carregandoAlocacao.value = true
-  const composicaoId = vagaAlocacao.value
-
-  try {
-    const resposta = await fetch('/api/equipes/alocar', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        composicao_id: vagaAlocacao.value,
-        chapa: colaboradorSelecionado.value.chapa
-      })
-    })
-
-    const dados = await resposta.json()
-
-    if (!resposta.ok || dados.erro) {
-      throw new Error(dados.erro || 'Erro ao alocar colaborador.')
-    }
-
-    dialogAlocacao.value = false
-    colaboradorSelecionado.value = null
-    baseAlocacao.value = null
-    equipeAlocacao.value = null
-    vagaAlocacao.value = null
-
-    atualizarEstadoAposAlocacao(composicaoId, dados.colaborador)
-  } catch (e) {
-    erro.value = e.message || 'Erro ao alocar colaborador.'
-  } finally {
-    carregandoAlocacao.value = false
-  }
-}
-
-async function removerColaborador(composicaoId) {
-  if (!window.confirm('Deseja realmente remover este colaborador da equipe?')) {
-    return
-  }
-
-  erro.value = ''
-  const vaga = equipes.value
-    .flatMap(equipe => equipe.vagas || [])
-    .find(item => String(item.id) === String(composicaoId))
-  const chapa = vaga?.colaborador?.chapa
-
-  try {
-    const resposta = await fetch('/api/equipes/remover', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        composicao_id: composicaoId
-      })
-    })
-
-    const dados = await resposta.json()
-
-    if (!resposta.ok || dados.erro) {
-      throw new Error(dados.erro || 'Erro ao remover colaborador.')
-    }
-
-    atualizarEstadoAposRemocao(chapa, composicaoId)
-  } catch (e) {
-    erro.value = e.message || 'Erro ao remover colaborador.'
   }
 }
 
@@ -977,31 +1154,20 @@ async function removerColaborador(composicaoId) {
 // ============================================================
 
 onMounted(() => {
-  restaurarModoNoturno()
-
-  carregarDados().then(() => {
+  carregarResumo().then(() => {
     try {
       const filtroSalvo = JSON.parse(
         localStorage.getItem('gerenciadorEquipes_basesSelecionadas') || '[]'
       )
 
       if (Array.isArray(filtroSalvo)) {
-        if (filtroSalvo.length === 0) {
-          baseSelecionada.value = [OPCAO_TODAS_BASES]
-        } else {
-          const basesExistentes = opcoesBases.value.map(opcao => opcao.value)
-          const validas = filtroSalvo.filter(
-            base => basesExistentes.includes(base) || base === OPCAO_TODAS_BASES
-          )
-          baseSelecionada.value = validas.length
-            ? normalizarSelecaoBases(validas)
-            : [OPCAO_TODAS_BASES]
-        }
-      } else {
-        baseSelecionada.value = [OPCAO_TODAS_BASES]
+        const basesExistentes = opcoesBases.value.map(opcao => opcao.value)
+        baseSelecionada.value = filtroSalvo.filter(base =>
+          basesExistentes.includes(base)
+        )
       }
     } catch {
-      baseSelecionada.value = [OPCAO_TODAS_BASES]
+      baseSelecionada.value = []
     }
   })
 })
@@ -1009,16 +1175,9 @@ onMounted(() => {
 watch(
   baseSelecionada,
   bases => {
-    const basesNormalizadas = normalizarSelecaoBases(bases)
-
-    if (JSON.stringify(basesNormalizadas) !== JSON.stringify(bases)) {
-      baseSelecionada.value = basesNormalizadas
-      return
-    }
-
     localStorage.setItem(
       'gerenciadorEquipes_basesSelecionadas',
-      JSON.stringify(basesNormalizadas)
+      JSON.stringify(bases.length ? bases : ['__TODAS_BASES__'])
     )
   },
   { deep: true }
@@ -1026,20 +1185,202 @@ watch(
 </script>
 
 <style scoped>
-.banco-page :deep(.q-list .q-item__section--main) {
-  text-align: center;
+/* celula de grupo mesclada: uma vez por disciplina, abrangendo suas funcoes */
+.celula-grupo {
+  vertical-align: middle;
+  border-left: 4px solid var(--cor-grupo, var(--marca));
+  background: var(--superficie-2);
+  white-space: nowrap;
+  width: 1%;
 }
 
-.banco-page :deep(.equipe-header .q-item__section--main) {
-  align-items: flex-start !important;
-  justify-content: flex-start !important;
-  text-align: left !important;
-  width: 100%;
-}
-
-.banco-page :deep(.equipe-header .q-item__label) {
+.grupo-rotulo {
   display: block;
-  width: 100%;
-  text-align: left !important;
+  font-family: var(--fonte-ui);
+  font-weight: 700;
+  font-size: 0.95rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--cor-grupo, var(--marca));
+}
+
+.grupo-detalhe {
+  display: block;
+  font-size: 0.72rem;
+  color: var(--tinta-fraca);
+}
+
+/* separa visualmente um grupo do anterior */
+.tabela-resumo :deep(tr.inicio-grupo td) {
+  border-top: 1px solid var(--linha-forte);
+}
+
+.tabela-resumo :deep(tbody tr:hover) {
+  background: var(--superficie-2);
+}
+
+.tabela-resumo :deep(tbody td) {
+  font-variant-numeric: tabular-nums;
+}
+
+.marcador-diferenca {
+  display: inline-block;
+  min-width: 34px;
+  padding: 1px 9px;
+  border-radius: 10px;
+  font-weight: 600;
+}
+
+.marcador-diferenca.negativa {
+  color: var(--negativo);
+  background: var(--negativo-fundo);
+}
+
+.marcador-diferenca.neutra {
+  color: var(--tinta-fraca);
+  background: var(--realce);
+}
+
+.resumo-page :deep(.q-table thead tr),
+.resumo-page :deep(.q-table thead th) {
+  background: #711424 !important;
+  color: #fff !important;
+  font-weight: 700;
+  text-align: center !important;
+}
+
+.resumo-page {
+  font-size: 95%;
+}
+
+.resumo-page :deep(.q-card__section) {
+  padding: 12px;
+}
+
+.resumo-page :deep(.q-table th),
+.resumo-page :deep(.q-table td) {
+  padding: 3px 5px;
+  line-height: 1.15;
+}
+
+.resumo-lateral :deep(.q-table th),
+.resumo-lateral :deep(.q-table td) {
+  padding: 2px 4px !important;
+  line-height: 1.1 !important;
+}
+
+.resumo-page :deep(.text-h5) {
+  font-size: 1.425rem;
+}
+
+.resumo-page :deep(.text-h6) {
+  font-size: 1.1875rem;
+}
+
+.resumo-page :deep(.text-subtitle2) {
+  font-size: 0.83125rem;
+}
+
+.resumo-composicao,
+.resumo-lateral {
+  flex: 0 0 100%;
+  max-width: 100%;
+}
+
+@media (min-width: 1024px) {
+  .resumo-composicao {
+    flex-basis: 60%;
+    max-width: 60%;
+  }
+
+  .resumo-lateral {
+    flex-basis: 40%;
+    max-width: 40%;
+  }
+}
+
+.tabela-equipe :deep(.q-table th),
+.tabela-equipe :deep(.q-table td) {
+  padding: 3px 5px;
+  line-height: 1.15;
+}
+
+.detalhes-disponiveis {
+  width: 95vw;
+  max-width: 1200px;
+}
+
+.tabela-alocados {
+  width: 76vw;
+  max-width: 960px;
+}
+
+.tabela-nao-alocados {
+  width: 76vw;
+  max-width: 960px;
+}
+
+.tabela-exportavel,
+.tabela-necessidades,
+.tabela-nao-alocados {
+  font-size: 90%;
+  user-select: text;
+}
+
+.tabela-exportavel :deep(th),
+.tabela-exportavel :deep(td),
+.tabela-necessidades :deep(th),
+.tabela-necessidades :deep(td) {
+  font-size: 11.9px !important;
+  line-height: 1.1 !important;
+  padding: 1px 3px !important;
+  text-align: center !important;
+}
+
+.tabela-nao-alocados :deep(th),
+.tabela-nao-alocados :deep(td) {
+  font-size: 11.9px !important;
+  line-height: 1.1 !important;
+  padding: 1px 3px !important;
+  text-align: center !important;
+}
+
+.tabela-exportavel :deep(table),
+.tabela-necessidades :deep(table),
+.tabela-nao-alocados :deep(table) {
+  white-space: nowrap;
+}
+
+.tabela-necessidades {
+  width: 53.2vw;
+  max-width: 672px;
+}
+
+@media (max-width: 600px) {
+  .tabela-alocados,
+  .tabela-necessidades,
+  .tabela-nao-alocados {
+    width: 95vw;
+  }
+}
+
+.tabela-necessidades :deep(th:nth-child(1)),
+.tabela-necessidades :deep(td:nth-child(1)) {
+  width: 20%;
+}
+
+.tabela-necessidades :deep(th:nth-child(2)),
+.tabela-necessidades :deep(td:nth-child(2)) {
+  width: 30%;
+}
+
+.tabela-necessidades :deep(th:nth-child(3)),
+.tabela-necessidades :deep(td:nth-child(3)) {
+  width: 35%;
+}
+
+.tabela-necessidades :deep(th:nth-child(4)),
+.tabela-necessidades :deep(td:nth-child(4)) {
+  width: 15%;
 }
 </style>
