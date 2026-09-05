@@ -213,14 +213,17 @@
             <div class="row q-col-gutter-md items-center">
               <div class="col-12 col-md-4">
                 <q-select
-                  v-model="baseFiltro"
+                  :model-value="baseFiltro"
                   outlined
                   dense
                   clearable
                   multiple
                   use-chips
+                  emit-value
+                  map-options
                   label="Base"
-                  :options="bases"
+                  :options="opcoesBaseFiltro"
+                  @update:model-value="atualizarSelecaoBaseFiltro"
                 />
               </div>
 
@@ -232,7 +235,7 @@
                   emit-value
                   map-options
                   label="Tipo"
-                  :options="OPCOES_TIPO"
+                  :options="opcoesTipos"
                 />
               </div>
 
@@ -590,7 +593,14 @@
 import { ref, computed, onMounted, watch } from 'vue'
 
 import CabecalhoApp from '../components/CabecalhoApp.vue'
-import { ehEquipeFolguista, OPCOES_TIPO, TIPO_TODOS } from '../utils/equipes'
+import {
+  equipeCombinaComTipo,
+  equipeNaSelecaoDeBases,
+  OPCAO_TODAS_BASES,
+  opcoesTipoFiltro,
+  proximaSelecaoBases,
+  TIPO_TODOS
+} from '../utils/equipes'
 
 const OPCOES_FUNCAO = [
   'ENCARREGADO',
@@ -657,6 +667,17 @@ const bases = computed(() => {
   return [...valores].sort()
 })
 
+const opcoesBaseFiltro = computed(() => [
+  { label: 'Todas as bases', value: OPCAO_TODAS_BASES },
+  ...bases.value.map(base => ({ label: base, value: base }))
+])
+
+function atualizarSelecaoBaseFiltro(selecao) {
+  baseFiltro.value = proximaSelecaoBases(baseFiltro.value, selecao)
+}
+
+const opcoesTipos = computed(() => opcoesTipoFiltro(equipes.value))
+
 const equipesOpcoes = computed(() =>
   equipes.value.map(equipe => ({
     label: `${equipe.prefixo} — ${equipe.base}`,
@@ -669,14 +690,11 @@ const equipesFiltradas = computed(() => {
   const basesEscolhidas = baseFiltro.value || []
 
   return equipes.value.filter(equipe => {
-    if (basesEscolhidas.length && !basesEscolhidas.includes(equipe.base)) {
+    if (!equipeNaSelecaoDeBases(equipe, basesEscolhidas)) {
       return false
     }
 
-    if (
-      tipoFiltro.value !== TIPO_TODOS &&
-      ehEquipeFolguista(equipe) !== (tipoFiltro.value === 'FOLGUISTA')
-    ) {
+    if (!equipeCombinaComTipo(equipe, tipoFiltro.value)) {
       return false
     }
 

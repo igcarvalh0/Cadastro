@@ -1198,7 +1198,7 @@ watch(
   display: block;
   font-family: var(--fonte-ui);
   font-weight: 700;
-  font-size: 0.95rem;
+  font-size: 1.1rem;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--cor-grupo, var(--marca));

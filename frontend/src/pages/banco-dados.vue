@@ -54,7 +54,7 @@
               <div class="col-12 col-md-3">
                 <q-select
                   v-model="tipoSelecionado"
-                  :options="OPCOES_TIPO"
+                  :options="opcoesTipos"
                   label="Tipo"
                   outlined
                   dense
@@ -445,7 +445,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 
 import CabecalhoApp from '../components/CabecalhoApp.vue'
-import { ehEquipeFolguista, OPCOES_TIPO, TIPO_TODOS } from '../utils/equipes'
+import { equipeCombinaComTipo, opcoesTipoFiltro, TIPO_TODOS } from '../utils/equipes'
 
 // ============================================================
 // ESTADO
@@ -602,6 +602,8 @@ const opcoesBases = computed(() => {
   })
 })
 
+const opcoesTipos = computed(() => opcoesTipoFiltro(equipes.value))
+
 // ============================================================
 // EQUIPES FILTRADAS
 // ============================================================
@@ -616,13 +618,9 @@ const equipesFiltradas = computed(() => {
           return baseSelecionada.value.includes(base)
         })
 
-  const equipesVisiveis =
-    tipoSelecionado.value === TIPO_TODOS
-      ? visiveisPorBase
-      : visiveisPorBase.filter(
-          equipe =>
-            ehEquipeFolguista(equipe) === (tipoSelecionado.value === 'FOLGUISTA')
-        )
+  const equipesVisiveis = visiveisPorBase.filter(equipe =>
+    equipeCombinaComTipo(equipe, tipoSelecionado.value)
+  )
 
   return [...equipesVisiveis].sort((a, b) => {
     const baseA = String(a.base || '').trim()
