@@ -441,6 +441,9 @@ def obter_equipes():
                     "id": composicao.id,
                     "funcao_er": composicao.FUNÇÃO_ER or "",
                     "tipo": tipo_equipe_da_vaga(composicao),
+                    "setor": composicao.SETOR or "",
+                    "supervisor": composicao.SUPERVISOR or "",
+                    "coordenador": composicao.COORDENADOR or "",
                     "ocupada": colaborador is not None,
                     "colaborador": {
                         "chapa": str(colaborador.CHAPA),
@@ -632,7 +635,18 @@ def remover_equipe(equipe_id):
 # ============================================================
 
 COLUNA_TIPO_EQUIPE = "TIPO EQUIPE"
-COLUNAS_FIXAS_PLANILHA = ("BASE", "PREFIXO", COLUNA_TIPO_EQUIPE, "AÇÃO")
+COLUNA_SETOR = "SETOR"
+COLUNA_SUPERVISOR = "SUPERVISOR"
+COLUNA_COORDENADOR = "COORDENADOR"
+COLUNAS_FIXAS_PLANILHA = (
+    "BASE",
+    "PREFIXO",
+    COLUNA_TIPO_EQUIPE,
+    COLUNA_SETOR,
+    COLUNA_SUPERVISOR,
+    COLUNA_COORDENADOR,
+    "AÇÃO",
+)
 COLUNAS_OBRIGATORIAS_PLANILHA = ("BASE", "PREFIXO", "AÇÃO")
 ACOES_PLANILHA = ("criar", "editar", "excluir")
 
@@ -683,18 +697,31 @@ def montar_planilha_equipes(session):
     for equipe in equipes:
         # uma linha por disciplina: a equipe Folguista pode ter vagas de
         # construcao e de poda ao mesmo tempo, e cada uma vira uma linha.
+        # SETOR/SUPERVISOR/COORDENADOR sao por disciplina tambem, entao
+        # basta pegar de uma vaga qualquer do grupo (sao gravados iguais
+        # em todas as vagas daquela disciplina).
         por_tipo = {}
+        metadados_por_tipo = {}
         for composicao in (equipe.composicoes or []):
             tipo = tipo_equipe_da_vaga(composicao)
             funcao = str(composicao.FUNÇÃO_ER).strip()
             por_tipo.setdefault(tipo, {})
             por_tipo[tipo][funcao] = por_tipo[tipo].get(funcao, 0) + 1
+            metadados_por_tipo.setdefault(tipo, {
+                "setor": composicao.SETOR or "",
+                "supervisor": composicao.SUPERVISOR or "",
+                "coordenador": composicao.COORDENADOR or "",
+            })
 
         for tipo in sorted(por_tipo):
+            metadados = metadados_por_tipo.get(tipo, {})
             linha = {
                 "BASE": equipe.BASE,
                 "PREFIXO": equipe.PREFIXO,
                 COLUNA_TIPO_EQUIPE: tipo,
+                COLUNA_SETOR: metadados.get("setor", ""),
+                COLUNA_SUPERVISOR: metadados.get("supervisor", ""),
+                COLUNA_COORDENADOR: metadados.get("coordenador", ""),
                 "AÇÃO": "editar",
             }
             for funcao in funcoes:
@@ -716,6 +743,11 @@ def quantidade_da_celula(valor):
 def texto_da_celula(valor):
     texto = str(valor or "").strip()
     return "" if texto.lower() == "nan" else texto
+
+
+def texto_ou_none(valor):
+    texto = texto_da_celula(valor)
+    return texto or None
 
 
 def analisar_planilha_equipes(arquivo, session):
@@ -769,6 +801,13 @@ def analisar_planilha_equipes(arquivo, session):
             if COLUNA_TIPO_EQUIPE in colunas
             else ""
         ) or TIPO_EQUIPE_PADRAO
+        setor = texto_ou_none(linha[colunas[COLUNA_SETOR]]) if COLUNA_SETOR in colunas else None
+        supervisor = (
+            texto_ou_none(linha[colunas[COLUNA_SUPERVISOR]]) if COLUNA_SUPERVISOR in colunas else None
+        )
+        coordenador = (
+            texto_ou_none(linha[colunas[COLUNA_COORDENADOR]]) if COLUNA_COORDENADOR in colunas else None
+        )
 
         if not base and not prefixo and not acao:
             continue
@@ -821,6 +860,9 @@ def analisar_planilha_equipes(arquivo, session):
             "tipo": tipo,
             "acao": acao,
             "alvos": {f: q for f, q in alvos.items()},
+            "setor": setor,
+            "supervisor": supervisor,
+            "coordenador": coordenador,
         })
 
     # ---------- 2. resolve equipe por equipe ----------
@@ -896,6 +938,9 @@ def analisar_planilha_equipes(arquivo, session):
                     "total": sum(vagas.values()),
                     "era_edicao": l["acao"] == "editar",
                     "equipe_nova": True,
+                    "setor": l["setor"],
+                    "supervisor": l["supervisor"],
+                    "coordenador": l["coordenador"],
                 })
             continue
 
@@ -917,8 +962,17 @@ def analisar_planilha_equipes(arquivo, session):
         # funcoes que a planilha nao trouxe como coluna ficam de fora do calculo
         funcoes_do_arquivo = set(colunas_funcao)
 
+        # SETOR/SUPERVISOR/COORDENADOR desejados por disciplina, para anexar
+        # nas vagas criadas/retipadas e para detectar troca de responsavel
+        # sem mudanca de quantidade
+        metadados_por_tipo = {
+            l["tipo"]: {"setor": l["setor"], "supervisor": l["supervisor"], "coordenador": l["coordenador"]}
+            for l in mantidas
+        }
+
         faltam = {}     # (tipo, funcao) -> quantidade a acrescentar
         sobram = {}     # (tipo, funcao) -> [composicoes livres a remover]
+        atualizacoes_metadado = []  # vagas cuja quantidade nao mudou, so o responsavel
         problema = None
 
         for chave in sorted(set(list(desejado.keys()) + list(atual.keys()))):
@@ -941,6 +995,22 @@ def analisar_planilha_equipes(arquivo, session):
                     existentes,
                     key=lambda c: (c.membro is None, -c.id),
                 )[: -diferenca]
+            elif existentes and tipo_chave in metadados_por_tipo:
+                desejados = metadados_por_tipo[tipo_chave]
+                precisa = any(
+                    (c.SETOR or None) != desejados["setor"]
+                    or (c.SUPERVISOR or None) != desejados["supervisor"]
+                    or (c.COORDENADOR or None) != desejados["coordenador"]
+                    for c in existentes
+                )
+                if precisa:
+                    atualizacoes_metadado.append({
+                        "funcao": funcao,
+                        "atualizar_metadados": len(existentes),
+                        "tipo": tipo_chave,
+                        "ids": [c.id for c in existentes],
+                        **desejados,
+                    })
 
         if problema:
             registrar_erro(primeira["numero"], primeira["rotulo"], problema)
@@ -960,6 +1030,9 @@ def analisar_planilha_equipes(arquivo, session):
                     "de": tipo_sobra,
                     "para": tipo_falta,
                     "ids": ids,
+                    **metadados_por_tipo.get(
+                        tipo_falta, {"setor": None, "supervisor": None, "coordenador": None}
+                    ),
                 })
                 del livres[:movidas]
                 quantidade -= movidas
@@ -971,7 +1044,14 @@ def analisar_planilha_equipes(arquivo, session):
                 del faltam[(tipo_falta, funcao)]
 
         for (tipo_chave, funcao), quantidade in faltam.items():
-            mudancas.append({"funcao": funcao, "adicionar": quantidade, "tipo": tipo_chave})
+            mudancas.append({
+                "funcao": funcao,
+                "adicionar": quantidade,
+                "tipo": tipo_chave,
+                **metadados_por_tipo.get(
+                    tipo_chave, {"setor": None, "supervisor": None, "coordenador": None}
+                ),
+            })
 
         ocupadas_a_apagar = [
             (tipo_chave, funcao, c)
@@ -997,6 +1077,8 @@ def analisar_planilha_equipes(arquivo, session):
                     "ids": [c.id for c in restantes],
                 })
 
+        mudancas.extend(atualizacoes_metadado)
+
         if not mudancas:
             plano["ignoradas"] += len(mantidas)
             continue
@@ -1006,6 +1088,8 @@ def analisar_planilha_equipes(arquivo, session):
                 return f"{m['retipar']} {m['funcao']}: {m['de']} → {m['para']}"
             if "adicionar" in m:
                 return f"+{m['adicionar']} {m['funcao']} ({m['tipo']})"
+            if "atualizar_metadados" in m:
+                return f"atualiza responsável de {m['funcao']} ({m['tipo']})"
             return f"-{m['remover']} {m['funcao']} ({m['tipo']})"
 
         plano["editar"].append({
@@ -1115,6 +1199,9 @@ def aplicar_planilha_equipes():
                         equipe_id=equipe_id,
                         FUNÇÃO_ER=funcao,
                         ESTRUTURA=item["tipo"],
+                        SETOR=item.get("setor"),
+                        SUPERVISOR=item.get("supervisor"),
+                        COORDENADOR=item.get("coordenador"),
                     ))
 
         for item in plano["editar"]:
@@ -1125,6 +1212,9 @@ def aplicar_planilha_equipes():
                             equipe_id=item["equipe_id"],
                             FUNÇÃO_ER=mudanca["funcao"],
                             ESTRUTURA=mudanca["tipo"],
+                            SETOR=mudanca.get("setor"),
+                            SUPERVISOR=mudanca.get("supervisor"),
+                            COORDENADOR=mudanca.get("coordenador"),
                         ))
                     continue
 
@@ -1141,6 +1231,13 @@ def aplicar_planilha_equipes():
                         # troca so a disciplina da vaga: id e colaborador ficam,
                         # entao retipar uma vaga ocupada e seguro
                         composicao.ESTRUTURA = mudanca["para"]
+                        composicao.SETOR = mudanca.get("setor")
+                        composicao.SUPERVISOR = mudanca.get("supervisor")
+                        composicao.COORDENADOR = mudanca.get("coordenador")
+                    elif "atualizar_metadados" in mudanca:
+                        composicao.SETOR = mudanca.get("setor")
+                        composicao.SUPERVISOR = mudanca.get("supervisor")
+                        composicao.COORDENADOR = mudanca.get("coordenador")
                     elif not composicao.membro:
                         session.delete(composicao)
 
@@ -1189,6 +1286,9 @@ def criar_vaga():
     equipe_id = dados.get("equipe_id")
     funcao_er = str(dados.get("funcao_er", "")).strip()
     estrutura = str(dados.get("estrutura", "")).strip()
+    setor = str(dados.get("setor", "")).strip() or None
+    supervisor = str(dados.get("supervisor", "")).strip() or None
+    coordenador = str(dados.get("coordenador", "")).strip() or None
 
     if not equipe_id:
         return jsonify({"erro": "Equipe não informada."}), 400
@@ -1203,13 +1303,27 @@ def criar_vaga():
         if not equipe:
             return jsonify({"erro": "Equipe não encontrada."}), 404
 
-        vaga = ComposicaoEquipe(equipe_id=equipe_id, FUNÇÃO_ER=funcao_er, ESTRUTURA=estrutura)
+        vaga = ComposicaoEquipe(
+            equipe_id=equipe_id,
+            FUNÇÃO_ER=funcao_er,
+            ESTRUTURA=estrutura,
+            SETOR=setor,
+            SUPERVISOR=supervisor,
+            COORDENADOR=coordenador,
+        )
         session.add(vaga)
         session.commit()
 
         return jsonify({
             "sucesso": True,
-            "vaga": {"id": vaga.id, "funcao_er": vaga.FUNÇÃO_ER, "estrutura": vaga.ESTRUTURA},
+            "vaga": {
+                "id": vaga.id,
+                "funcao_er": vaga.FUNÇÃO_ER,
+                "estrutura": vaga.ESTRUTURA,
+                "setor": vaga.SETOR or "",
+                "supervisor": vaga.SUPERVISOR or "",
+                "coordenador": vaga.COORDENADOR or "",
+            },
         })
     except Exception as erro:
         session.rollback()

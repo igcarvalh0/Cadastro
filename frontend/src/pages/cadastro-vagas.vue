@@ -117,8 +117,31 @@
                   v-model="vagaEstrutura"
                   outlined
                   dense
-                  label="Estrutura"
-                  :options="OPCOES_ESTRUTURA"
+                  use-input
+                  fill-input
+                  hide-selected
+                  input-debounce="0"
+                  new-value-mode="add-unique"
+                  label="Tipo de equipe (disciplina)"
+                  hint="Ex.: CONSTRUÇÃO, PODA, LINHA VIVA..."
+                  :options="estruturasFiltradas"
+                  @filter="filtrarEstruturas"
+                />
+
+                <q-input v-model="vagaSetor" outlined dense label="Setor (opcional)" />
+
+                <q-input
+                  v-model="vagaSupervisor"
+                  outlined
+                  dense
+                  label="Supervisor (opcional)"
+                />
+
+                <q-input
+                  v-model="vagaCoordenador"
+                  outlined
+                  dense
+                  label="Coordenador (opcional)"
                 />
 
                 <q-btn
@@ -343,6 +366,21 @@
                             vaga.colaborador
                               ? `${vaga.colaborador.chapa} — ${vaga.colaborador.nome}`
                               : 'Sem colaborador alocado'
+                          }}
+                        </q-item-label>
+
+                        <q-item-label
+                          v-if="vaga.setor || vaga.supervisor || vaga.coordenador"
+                          caption
+                        >
+                          {{
+                            [
+                              vaga.setor && `Setor: ${vaga.setor}`,
+                              vaga.supervisor && `Supervisor: ${vaga.supervisor}`,
+                              vaga.coordenador && `Coordenador: ${vaga.coordenador}`
+                            ]
+                              .filter(Boolean)
+                              .join(' · ')
                           }}
                         </q-item-label>
                       </q-item-section>
@@ -609,8 +647,6 @@ const OPCOES_FUNCAO = [
   'AUXILIAR DE ELETRICISTA'
 ]
 
-const OPCOES_ESTRUTURA = ['Construção', 'Folguista']
-
 // ============================================================
 // ESTADO
 // ============================================================
@@ -628,8 +664,12 @@ const salvandoEquipe = ref(false)
 
 const vagaEquipe = ref(null)
 const vagaFuncao = ref(null)
-const vagaEstrutura = ref(OPCOES_ESTRUTURA[0])
+const vagaEstrutura = ref(null)
+const vagaSetor = ref('')
+const vagaSupervisor = ref('')
+const vagaCoordenador = ref('')
 const salvandoVaga = ref(false)
+const estruturasFiltradas = ref([])
 
 const filtroEquipe = ref('')
 const baseFiltro = ref([])
@@ -654,6 +694,16 @@ const equipesOpcoesFiltradas = ref([])
 // ============================================================
 // DERIVADOS
 // ============================================================
+
+const estruturasDisponiveis = computed(() => {
+  const valores = new Set()
+
+  equipes.value.forEach(equipe => {
+    ;(equipe.tipos || []).forEach(tipo => tipo && valores.add(tipo))
+  })
+
+  return valores.size ? [...valores].sort() : ['CONSTRUÇÃO']
+})
 
 const bases = computed(() => {
   const valores = new Set()
@@ -737,6 +787,16 @@ function filtrarBases(termo, update) {
     basesFiltradas.value = busca
       ? bases.value.filter(base => base.toLowerCase().includes(busca))
       : bases.value
+  })
+}
+
+function filtrarEstruturas(termo, update) {
+  update(() => {
+    const busca = termo.toUpperCase()
+
+    estruturasFiltradas.value = busca
+      ? estruturasDisponiveis.value.filter(tipo => tipo.toUpperCase().includes(busca))
+      : estruturasDisponiveis.value
   })
 }
 
@@ -824,7 +884,10 @@ async function criarVaga() {
       body: JSON.stringify({
         equipe_id: vagaEquipe.value,
         funcao_er: vagaFuncao.value,
-        estrutura: vagaEstrutura.value
+        estrutura: (vagaEstrutura.value || '').toUpperCase(),
+        setor: vagaSetor.value,
+        supervisor: vagaSupervisor.value,
+        coordenador: vagaCoordenador.value
       })
     })
 

@@ -84,6 +84,12 @@ class ComposicaoEquipe(Base):
 
     ESTRUTURA = Column(String, nullable=False)
 
+    # informados por disciplina (equipe + TIPO EQUIPE), nao por equipe inteira.
+    # servem para escopar os futuros usuarios de alocacao.
+    SETOR = Column(String, nullable=True)
+    SUPERVISOR = Column(String, nullable=True)
+    COORDENADOR = Column(String, nullable=True)
+
     equipe = relationship(
         "Equipe",
         back_populates="composicoes"
