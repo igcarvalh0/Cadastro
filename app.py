@@ -103,6 +103,7 @@ ORDEM_FUNCOES = {
     "ELETRICISTA": 2,
     "MOTORISTA": 3,
     "AUXILIAR DE ELETRICISTA": 4,
+    "PODADOR": 5,
 }
 
 
@@ -142,6 +143,10 @@ def padronizar_funcao(funcao):
 
     if "ELETRICISTA" in funcao_norm:
         return "ELETRICISTA"
+
+    # "ENCARREGADO DE PODA" nao cai aqui: encarregado e testado antes
+    if "PODADOR" in funcao_norm:
+        return "PODADOR"
 
     # demais funcoes (Podador, etc.): exibe em caixa alta, igual as outras
     return str(funcao).strip().upper()

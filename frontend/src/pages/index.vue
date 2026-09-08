@@ -546,6 +546,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 
 import CabecalhoApp from '../components/CabecalhoApp.vue'
+import { FUNCOES_SISTEMA, padronizarFuncao } from '../utils/equipes'
 
 // mantem /resumo valendo como atalho para a tela principal
 definePage({ alias: '/resumo' })
@@ -728,36 +729,6 @@ function rotuloCurto(grupo) {
   // nome de tipo de equipe sempre em caixa alta
   return grupo.rotulo.toUpperCase()
 }
-const funcoesDisponiveis = [
-  'ENCARREGADO',
-  'ELETRICISTA',
-  'MOTORISTA',
-  'AUXILIAR DE ELETRICISTA'
-]
-
-function funcaoResumo(funcao) {
-  const valor = String(funcao || '')
-    .trim()
-    .toUpperCase()
-
-  if (valor === 'ENCARREGADO') {
-    return 'ENCARREGADO'
-  }
-
-  if (valor === 'ELETRICISTA') {
-    return 'ELETRICISTA'
-  }
-
-  if (valor === 'MUNQUEIRO/MOTORISTA' || valor === 'MOTORISTA') {
-    return 'MOTORISTA'
-  }
-
-  if (valor === 'AUXILIAR ELETRICISTA' || valor === 'AUXILIAR DE ELETRICISTA') {
-    return 'AUXILIAR DE ELETRICISTA'
-  }
-
-  return valor
-}
 
 const colunasDisponiveis = computed(() => {
   const colunas = [
@@ -917,7 +888,7 @@ const colunasNecessidades = [
 ]
 
 const linhasDisponiveis = computed(() => {
-  return funcoesDisponiveis.map(funcao => {
+  return FUNCOES_SISTEMA.map(funcao => {
     const linha = { funcao, total: 0 }
 
     for (const base of pessoasDisponiveisFiltradas.value) {
@@ -949,7 +920,7 @@ const necessidadePorFuncao = computed(() => {
 })
 
 const indicadoresFuncoes = computed(() => {
-  return funcoesDisponiveis.map(funcao => {
+  return FUNCOES_SISTEMA.map(funcao => {
     const necessidade = necessidadePorFuncao.value[funcao] || {
       vagas: 0,
       alocados: 0
@@ -971,14 +942,14 @@ const pessoasNaoAlocadasFiltradas = computed(() => {
 })
 
 const linhasNaoAlocadas = computed(() => {
-  return funcoesDisponiveis.map(funcao => {
+  return FUNCOES_SISTEMA.map(funcao => {
     const linha = { funcao, total: 0 }
 
     for (const base of basesExibidas.value) {
       const quantidade = pessoasNaoAlocadasFiltradas.value.filter(
         pessoa =>
           pessoa.codigo === base.codigo &&
-          funcaoResumo(pessoa.funcao) === funcao
+          padronizarFuncao(pessoa.funcao) === funcao
       ).length
 
       linha[base.codigo] = quantidade
@@ -992,7 +963,7 @@ const linhasNaoAlocadas = computed(() => {
 const naoAlocadosDetalhesExibidos = computed(() => {
   return pessoasNaoAlocadasFiltradas.value.filter(
     pessoa =>
-      funcaoResumo(pessoa.funcao) === naoAlocadosSelecionados.value.funcao &&
+      padronizarFuncao(pessoa.funcao) === naoAlocadosSelecionados.value.funcao &&
       (!naoAlocadosSelecionados.value.codigo ||
         pessoa.codigo === naoAlocadosSelecionados.value.codigo)
   )

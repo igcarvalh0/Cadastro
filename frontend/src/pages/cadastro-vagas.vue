@@ -110,7 +110,7 @@
                   outlined
                   dense
                   label="Função da vaga"
-                  :options="OPCOES_FUNCAO"
+                  :options="FUNCOES_SISTEMA"
                 />
 
                 <q-select
@@ -647,6 +647,7 @@ import {
   equipeCombinaComSetor,
   equipeCombinaComTipo,
   equipeNaSelecaoDeBases,
+  FUNCOES_SISTEMA,
   OPCAO_TODAS_BASES,
   opcoesSetorFiltro,
   opcoesTipoFiltro,
@@ -654,13 +655,6 @@ import {
   SETOR_TODOS,
   TIPO_TODOS
 } from '../utils/equipes'
-
-const OPCOES_FUNCAO = [
-  'ENCARREGADO',
-  'ELETRICISTA',
-  'MOTORISTA',
-  'AUXILIAR DE ELETRICISTA'
-]
 
 // ============================================================
 // ESTADO
