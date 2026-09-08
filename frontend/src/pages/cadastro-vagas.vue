@@ -262,6 +262,18 @@
                 />
               </div>
 
+              <div class="col-12 col-md-3">
+                <q-select
+                  v-model="setorFiltro"
+                  outlined
+                  dense
+                  emit-value
+                  map-options
+                  label="Setor"
+                  :options="opcoesSetores"
+                />
+              </div>
+
               <div class="col-12 col-md">
                 <q-input
                   v-model="filtroEquipe"
@@ -632,11 +644,14 @@ import { ref, computed, onMounted, watch } from 'vue'
 
 import CabecalhoApp from '../components/CabecalhoApp.vue'
 import {
+  equipeCombinaComSetor,
   equipeCombinaComTipo,
   equipeNaSelecaoDeBases,
   OPCAO_TODAS_BASES,
+  opcoesSetorFiltro,
   opcoesTipoFiltro,
   proximaSelecaoBases,
+  SETOR_TODOS,
   TIPO_TODOS
 } from '../utils/equipes'
 
@@ -674,6 +689,7 @@ const estruturasFiltradas = ref([])
 const filtroEquipe = ref('')
 const baseFiltro = ref([])
 const tipoFiltro = ref(TIPO_TODOS)
+const setorFiltro = ref(SETOR_TODOS)
 
 const arquivoPlanilha = ref(null)
 const planoPlanilha = ref(null)
@@ -728,6 +744,8 @@ function atualizarSelecaoBaseFiltro(selecao) {
 
 const opcoesTipos = computed(() => opcoesTipoFiltro(equipes.value))
 
+const opcoesSetores = computed(() => opcoesSetorFiltro(equipes.value))
+
 const equipesOpcoes = computed(() =>
   equipes.value.map(equipe => ({
     label: `${equipe.prefixo} — ${equipe.base}`,
@@ -745,6 +763,10 @@ const equipesFiltradas = computed(() => {
     }
 
     if (!equipeCombinaComTipo(equipe, tipoFiltro.value)) {
+      return false
+    }
+
+    if (!equipeCombinaComSetor(equipe, setorFiltro.value)) {
       return false
     }
 

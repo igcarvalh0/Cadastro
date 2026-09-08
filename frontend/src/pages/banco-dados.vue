@@ -63,6 +63,18 @@
                 />
               </div>
 
+              <div class="col-12 col-md-3">
+                <q-select
+                  v-model="setorSelecionado"
+                  :options="opcoesSetores"
+                  label="Setor"
+                  outlined
+                  dense
+                  emit-value
+                  map-options
+                />
+              </div>
+
               <div class="col-auto">
                 <q-chip color="primary" text-color="white">
                   {{ equipesFiltradas.length }} equipes
@@ -445,7 +457,14 @@
 import { ref, computed, onMounted, watch } from 'vue'
 
 import CabecalhoApp from '../components/CabecalhoApp.vue'
-import { equipeCombinaComTipo, opcoesTipoFiltro, TIPO_TODOS } from '../utils/equipes'
+import {
+  equipeCombinaComSetor,
+  equipeCombinaComTipo,
+  opcoesSetorFiltro,
+  opcoesTipoFiltro,
+  SETOR_TODOS,
+  TIPO_TODOS
+} from '../utils/equipes'
 
 // ============================================================
 // ESTADO
@@ -461,6 +480,7 @@ const erro = ref('')
 
 const baseSelecionada = ref([])
 const tipoSelecionado = ref(TIPO_TODOS)
+const setorSelecionado = ref(SETOR_TODOS)
 
 const filtroColaborador = ref('')
 const statusColaborador = ref('TODOS')
@@ -604,6 +624,8 @@ const opcoesBases = computed(() => {
 
 const opcoesTipos = computed(() => opcoesTipoFiltro(equipes.value))
 
+const opcoesSetores = computed(() => opcoesSetorFiltro(equipes.value))
+
 // ============================================================
 // EQUIPES FILTRADAS
 // ============================================================
@@ -618,8 +640,10 @@ const equipesFiltradas = computed(() => {
           return baseSelecionada.value.includes(base)
         })
 
-  const equipesVisiveis = visiveisPorBase.filter(equipe =>
-    equipeCombinaComTipo(equipe, tipoSelecionado.value)
+  const equipesVisiveis = visiveisPorBase.filter(
+    equipe =>
+      equipeCombinaComTipo(equipe, tipoSelecionado.value) &&
+      equipeCombinaComSetor(equipe, setorSelecionado.value)
   )
 
   return [...equipesVisiveis].sort((a, b) => {

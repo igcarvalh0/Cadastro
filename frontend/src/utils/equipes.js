@@ -36,14 +36,6 @@ export function equipeCombinaComTipo(equipe, tipoFiltro) {
   return tiposDaEquipe(equipe).includes(tipoFiltro)
 }
 
-function rotuloTipo(tipo) {
-  return tipo
-    .toLowerCase()
-    .split(' ')
-    .map(parte => parte.charAt(0).toUpperCase() + parte.slice(1))
-    .join(' ')
-}
-
 // Monta as opcoes do filtro de tipo a partir das disciplinas que existem de
 // fato nas equipes carregadas, em vez de uma lista fixa — assim uma
 // disciplina nova (cadastrada pela planilha) aparece no filtro sem precisar
@@ -61,8 +53,47 @@ export function opcoesTipoFiltro(equipes) {
 
   return [
     { label: 'Todos os tipos', value: TIPO_TODOS },
-    ...[...disciplinas].sort().map(tipo => ({ label: rotuloTipo(tipo), value: tipo })),
-    { label: 'Folguista', value: TIPO_FOLGUISTA }
+    // nome de tipo de equipe sempre em caixa alta
+    ...[...disciplinas].sort().map(tipo => ({ label: tipo.toUpperCase(), value: tipo })),
+    { label: TIPO_FOLGUISTA, value: TIPO_FOLGUISTA }
+  ]
+}
+
+// ------------------------------------------------------------
+// Filtro de setor
+// ------------------------------------------------------------
+
+export const SETOR_TODOS = 'TODOS'
+
+// O setor e informado por disciplina, entao uma equipe com vagas de construcao
+// e de poda pode responder a dois setores. O filtro casa se QUALQUER vaga dela
+// for do setor escolhido.
+export function setoresDaEquipe(equipe) {
+  return Array.isArray(equipe?.setores) ? equipe.setores : []
+}
+
+export function equipeCombinaComSetor(equipe, setorFiltro) {
+  if (!setorFiltro || setorFiltro === SETOR_TODOS) {
+    return true
+  }
+
+  return setoresDaEquipe(equipe).includes(setorFiltro)
+}
+
+export function opcoesSetorFiltro(equipes) {
+  const setores = new Set()
+
+  for (const equipe of equipes || []) {
+    for (const setor of setoresDaEquipe(equipe)) {
+      if (setor) {
+        setores.add(setor)
+      }
+    }
+  }
+
+  return [
+    { label: 'Todos os setores', value: SETOR_TODOS },
+    ...[...setores].sort().map(setor => ({ label: setor, value: setor }))
   ]
 }
 

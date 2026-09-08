@@ -457,6 +457,7 @@ def obter_equipes():
                 "prefixo": equipe.PREFIXO or "",
                 "base": equipe.BASE or "",
                 "tipos": tipos_da_equipe(equipe),
+                "setores": setores_da_equipe(equipe),
                 "folguista": eh_folguista(equipe.PREFIXO),
                 "vagas": vagas,
             })
@@ -673,6 +674,17 @@ def tipo_equipe_da_vaga(composicao):
 def tipos_da_equipe(equipe):
     tipos = {tipo_equipe_da_vaga(c) for c in (equipe.composicoes or [])}
     return sorted(tipos) if tipos else [TIPO_EQUIPE_PADRAO]
+
+
+def setores_da_equipe(equipe):
+    """Setores presentes nas vagas. Como o setor e por disciplina, uma equipe
+    com vagas de construcao e de poda pode responder a dois setores."""
+    setores = {
+        str(c.SETOR).strip()
+        for c in (equipe.composicoes or [])
+        if c.SETOR and str(c.SETOR).strip()
+    }
+    return sorted(setores)
 
 
 def montar_planilha_equipes(session):

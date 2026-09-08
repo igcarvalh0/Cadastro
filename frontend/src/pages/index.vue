@@ -595,7 +595,7 @@ const necessidadeSelecionada = ref({
 
 const opcoesTipos = computed(() => [
   { label: 'Todos os tipos', value: '' },
-  ...tiposFiltro.value.map(tipo => ({ label: tipo, value: tipo }))
+  ...tiposFiltro.value.map(tipo => ({ label: tipo.toUpperCase(), value: tipo }))
 ])
 
 const opcoesBases = computed(() => {
@@ -662,7 +662,8 @@ function corDoTipo(grupo) {
 }
 
 function rotuloCurto(grupo) {
-  return grupo.rotulo.toLowerCase()
+  // nome de tipo de equipe sempre em caixa alta
+  return grupo.rotulo.toUpperCase()
 }
 const funcoesDisponiveis = [
   'ENCARREGADO',
