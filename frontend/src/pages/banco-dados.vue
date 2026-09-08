@@ -111,8 +111,34 @@
 
           <div class="col-12 col-lg-8">
             <q-card bordered>
-              <q-card-section class="text-center">
-                <div class="text-h6"> Equipes </div>
+              <q-card-section>
+                <div class="row items-center q-col-gutter-sm">
+                  <div class="col">
+                    <div class="text-h6"> Equipes </div>
+                  </div>
+
+                  <div class="col-auto">
+                    <q-btn
+                      outline
+                      dense
+                      size="sm"
+                      color="negative"
+                      icon="person_remove"
+                      label="Remover todas as alocações"
+                      :disable="!colaboradoresAlocados"
+                      :loading="limpandoAlocacoes"
+                      @click="removerTodasAlocacoes"
+                    >
+                      <q-tooltip>
+                        {{
+                          colaboradoresAlocados
+                            ? `Libera as ${colaboradoresAlocados} vagas ocupadas de todas as bases`
+                            : 'Nenhum colaborador alocado'
+                        }}
+                      </q-tooltip>
+                    </q-btn>
+                  </div>
+                </div>
               </q-card-section>
 
               <q-separator />
@@ -481,6 +507,7 @@ const erro = ref('')
 const baseSelecionada = ref([])
 const tipoSelecionado = ref(TIPO_TODOS)
 const setorSelecionado = ref(SETOR_TODOS)
+const limpandoAlocacoes = ref(false)
 
 const filtroColaborador = ref('')
 const statusColaborador = ref('TODOS')
@@ -981,6 +1008,38 @@ async function removerColaborador(composicaoId) {
     atualizarEstadoAposRemocao(chapa, composicaoId)
   } catch (e) {
     erro.value = e.message || 'Erro ao remover colaborador.'
+  }
+}
+
+async function removerTodasAlocacoes() {
+  if (
+    !window.confirm(
+      `Remover as ${colaboradoresAlocados.value} alocações de TODAS as bases?
+
+` +
+        'As vagas continuam cadastradas — só os colaboradores saem delas. ' +
+        'Isso não pode ser desfeito.'
+    )
+  ) {
+    return
+  }
+
+  erro.value = ''
+  limpandoAlocacoes.value = true
+
+  try {
+    const resposta = await fetch('/api/membros', { method: 'DELETE' })
+    const dados = await resposta.json()
+
+    if (!resposta.ok || dados.erro) {
+      throw new Error(dados.erro || 'Erro ao remover as alocações.')
+    }
+
+    await carregarDados()
+  } catch (e) {
+    erro.value = e.message || 'Erro ao remover as alocações.'
+  } finally {
+    limpandoAlocacoes.value = false
   }
 }
 

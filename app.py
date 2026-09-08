@@ -119,17 +119,32 @@ def normalizar(texto):
 
 
 def padronizar_funcao(funcao):
+    """Reduz as variacoes de nome de funcao as categorias do sistema.
+
+    O cadastro traz nomes detalhados ("MOTORISTA OP DE GUINCHO",
+    "ENCARREGADO DE PODA", "ELETRICISTA MONTADOR"), entao a regra e por
+    palavra contida, nao por nome exato.
+    """
     funcao_norm = normalizar(funcao)
-    if funcao_norm == "ENCARREGADO":
+    if not funcao_norm:
+        return ""
+
+    if "ENCARREGADO" in funcao_norm:
         return "ENCARREGADO"
-    if funcao_norm == "ELETRICISTA":
-        return "ELETRICISTA"
-    if funcao_norm in ("MOTORISTA", "MUNQUEIRO/MOTORISTA"):
+
+    if "MOTORISTA" in funcao_norm:
         return "MOTORISTA"
-    if funcao_norm in ("AUXILIAR DE ELETRICISTA", "AUXILIAR ELETRICISTA"):
+
+    # precisa das duas palavras: existem AUXILIAR ADMINISTRATIVO, AUXILIAR DE
+    # ALMOXARIFADO e outros que nao tem nada a ver com eletricista
+    if "AUXILIAR" in funcao_norm and "ELETRICISTA" in funcao_norm:
         return "AUXILIAR DE ELETRICISTA"
-    # funcao nova (Podador, etc.): exibe em caixa alta, igual as demais
-    return str(funcao).strip().upper() if funcao else ""
+
+    if "ELETRICISTA" in funcao_norm:
+        return "ELETRICISTA"
+
+    # demais funcoes (Podador, etc.): exibe em caixa alta, igual as outras
+    return str(funcao).strip().upper()
 
 
 def ordem_funcao(funcao):
@@ -586,6 +601,28 @@ def atualizar_equipe(equipe_id):
         session.rollback()
         print(f"[ERRO] atualizar_equipe: {erro}")
         return jsonify({"erro": "Não foi possível atualizar a equipe."}), 500
+    finally:
+        session.close()
+
+
+@app.route("/api/membros", methods=["DELETE"])
+def remover_todas_alocacoes():
+    """Libera todas as vagas do sistema de uma vez. As vagas continuam
+    cadastradas: some so o vinculo com o colaborador."""
+    session = SessionLocal()
+    try:
+        total = session.query(MembroEquipe).delete()
+        session.commit()
+
+        return jsonify({
+            "sucesso": True,
+            "removidos": total,
+            "mensagem": f"{total} alocação(ões) removida(s).",
+        })
+    except Exception as erro:
+        session.rollback()
+        print(f"[ERRO] remover_todas_alocacoes: {erro}")
+        return jsonify({"erro": "Não foi possível remover as alocações."}), 500
     finally:
         session.close()
 
