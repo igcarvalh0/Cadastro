@@ -68,10 +68,21 @@
                   <q-chip
                     v-for="grupo in totalExibido.grupos"
                     :key="grupo.rotulo"
+                    clickable
                     text-color="white"
+                    class="chip-tipo"
+                    :class="{ ativo: tipoEstaFiltrado(grupo) }"
                     :style="{ background: corDoTipo(grupo) }"
+                    @click="alternarFiltroTipo(grupo)"
                   >
                     {{ grupo.equipes }} {{ rotuloCurto(grupo) }}
+                    <q-tooltip>
+                      {{
+                        tipoEstaFiltrado(grupo)
+                          ? 'Clique para remover o filtro'
+                          : `Filtrar por ${rotuloCurto(grupo)}`
+                      }}
+                    </q-tooltip>
                   </q-chip>
                 </div>
               </div>
@@ -140,11 +151,22 @@
                       <q-chip
                         v-for="grupo in base.grupos"
                         :key="grupo.rotulo"
+                        clickable
                         size="sm"
                         text-color="white"
+                        class="chip-tipo"
+                        :class="{ ativo: tipoEstaFiltrado(grupo) }"
                         :style="{ background: corDoTipo(grupo) }"
+                        @click="alternarFiltroTipo(grupo)"
                       >
                         {{ grupo.equipes }} {{ rotuloCurto(grupo) }}
+                        <q-tooltip>
+                          {{
+                            tipoEstaFiltrado(grupo)
+                              ? 'Clique para remover o filtro'
+                              : `Filtrar por ${rotuloCurto(grupo)}`
+                          }}
+                        </q-tooltip>
                       </q-chip>
                     </div>
                   </div>
@@ -647,18 +669,59 @@ const totalExibido = computed(() => {
 })
 
 // a cor identifica a disciplina de forma consistente entre chips e cards
+// construcao e folguista sao os dois conceitos fixos do sistema e tem cor
+// propria; as demais disciplinas saem da paleta abaixo
 const CORES_TIPO = {
-  'CONSTRUÇÃO': 'var(--tipo-construcao)',
-  'PODA': 'var(--tipo-poda)',
-  'LINHA VIVA': 'var(--tipo-linha-viva)',
-  'TAT': 'var(--tipo-tat)'
+  'CONSTRUÇÃO': 'var(--tipo-construcao)'
 }
+
+const PALETA_TIPOS = [
+  'var(--tipo-p1)',
+  'var(--tipo-p2)',
+  'var(--tipo-p3)',
+  'var(--tipo-p4)',
+  'var(--tipo-p5)',
+  'var(--tipo-p6)',
+  'var(--tipo-p7)',
+  'var(--tipo-p8)',
+  'var(--tipo-p9)',
+  'var(--tipo-p10)'
+]
+
+// distribui a paleta pelas disciplinas em ordem alfabetica, garantindo cor
+// distinta para cada uma. construcao fica fora porque ja tem cor fixa.
+const coresPorTipo = computed(() => {
+  const mapa = { ...CORES_TIPO }
+  let proxima = 0
+
+  for (const tipo of [...tiposFiltro.value].sort()) {
+    if (!tipo || tipo === 'FOLGUISTA' || mapa[tipo]) {
+      continue
+    }
+    mapa[tipo] = PALETA_TIPOS[proxima % PALETA_TIPOS.length]
+    proxima += 1
+  }
+
+  return mapa
+})
 
 function corDoTipo(grupo) {
   if (grupo.folguista) {
     return 'var(--tipo-folguista)'
   }
-  return CORES_TIPO[grupo.tipo] || 'var(--tipo-outro)'
+  return coresPorTipo.value[grupo.tipo] || 'var(--tipo-outro)'
+}
+
+// clicar no chip liga o filtro daquele tipo; clicar de novo desliga
+function alternarFiltroTipo(grupo) {
+  const alvo = grupo.folguista ? 'FOLGUISTA' : grupo.tipo
+  tipoSelecionado.value = tipoSelecionado.value === alvo ? '' : alvo
+  carregarResumo()
+}
+
+function tipoEstaFiltrado(grupo) {
+  const alvo = grupo.folguista ? 'FOLGUISTA' : grupo.tipo
+  return tipoSelecionado.value === alvo
 }
 
 function rotuloCurto(grupo) {
@@ -1186,6 +1249,32 @@ watch(
 </script>
 
 <style scoped>
+/* chip de tipo: e um filtro, entao precisa parecer clicavel e mostrar
+   claramente qual esta ativo */
+.chip-tipo {
+  cursor: pointer;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.chip-tipo:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.22);
+}
+
+.chip-tipo.ativo {
+  box-shadow: 0 0 0 2px var(--superficie), 0 0 0 4px currentColor;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chip-tipo {
+    transition: none;
+  }
+
+  .chip-tipo:hover {
+    transform: none;
+  }
+}
+
 /* celula de grupo mesclada: uma vez por disciplina, abrangendo suas funcoes */
 .celula-grupo {
   vertical-align: middle;

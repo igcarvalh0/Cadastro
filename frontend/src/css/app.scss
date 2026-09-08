@@ -67,11 +67,23 @@
   --realce: #f7e9d7;
   --sombra: 0 10px 28px rgba(65, 32, 38, 0.09);
 
+  // disciplinas com cor propria: construcao usa a cor da marca e folguista o
+  // laranja, por serem os dois conceitos fixos do sistema
   --tipo-construcao: #711424;
-  --tipo-poda: #3f6b48;
-  --tipo-linha-viva: #4a5c80;
-  --tipo-tat: #6b4a78;
   --tipo-folguista: #c9741b;
+
+  // paleta para as demais disciplinas. a atribuicao e estavel por nome, entao
+  // uma disciplina nova entra com cor propria sem precisar mexer no codigo
+  --tipo-p1: #3f6b48;
+  --tipo-p2: #4a5c80;
+  --tipo-p3: #6b4a78;
+  --tipo-p4: #1f6f6b;
+  --tipo-p5: #8a5a2b;
+  --tipo-p6: #a03d5c;
+  --tipo-p7: #5f6b2a;
+  --tipo-p8: #2f6690;
+  --tipo-p9: #8a6a1f;
+  --tipo-p10: #8a3f78;
   --tipo-outro: #6d5f63;
 
   --fonte-ui: 'Barlow Semi Condensed', 'Segoe UI', sans-serif;
@@ -101,10 +113,18 @@ body.body--dark {
 
   // no escuro as cores de disciplina precisam clarear para continuarem legiveis
   --tipo-construcao: #e08a9c;
-  --tipo-poda: #86c294;
-  --tipo-linha-viva: #9ab0d8;
-  --tipo-tat: #c3a0cd;
   --tipo-folguista: #e0a259;
+
+  --tipo-p1: #86c294;
+  --tipo-p2: #9ab0d8;
+  --tipo-p3: #c3a0cd;
+  --tipo-p4: #71c4bd;
+  --tipo-p5: #d9a877;
+  --tipo-p6: #e896ac;
+  --tipo-p7: #b9c47e;
+  --tipo-p8: #86b6dd;
+  --tipo-p9: #d9c078;
+  --tipo-p10: #d693c9;
   --tipo-outro: #b7a6aa;
 
   // o Quasar pinta o fundo escuro com #121212; aqui usamos o tom quente do tema

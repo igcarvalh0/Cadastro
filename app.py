@@ -205,6 +205,8 @@ def obter_resumo():
             # o tipo alimenta o filtro mesmo quando a base esta filtrada fora
             for composicao in (equipe.composicoes or []):
                 tipos_existentes.add(tipo_equipe_da_vaga(composicao))
+            if folguista and equipe.composicoes:
+                tipos_existentes.add("FOLGUISTA")
 
             if filtro_base:
                 filtro_norm = normalizar(filtro_base)
@@ -226,11 +228,19 @@ def obter_resumo():
                     "detalhes": {},
                 }
 
+            filtrando_folguista = normalizar(filtro_tipo) == "FOLGUISTA"
+
             for composicao in (equipe.composicoes or []):
                 tipo = tipo_equipe_da_vaga(composicao)
 
-                if filtro_tipo and normalizar(tipo) != normalizar(filtro_tipo):
-                    continue
+                if filtro_tipo:
+                    # "FOLGUISTA" filtra pela equipe ser folguista, em qualquer
+                    # disciplina; os demais filtram pela disciplina da vaga
+                    if filtrando_folguista:
+                        if not folguista:
+                            continue
+                    elif normalizar(tipo) != normalizar(filtro_tipo):
+                        continue
 
                 funcao_exibicao = padronizar_funcao(composicao.FUNÇÃO_ER)
                 if not funcao_exibicao:
@@ -305,6 +315,11 @@ def obter_resumo():
                     "alocados": alocados,
                     "diferenca": alocados - vagas,
                 })
+
+            # com filtro de tipo, a base so aparece se tiver aquele tipo:
+            # sem isso sobrariam cards de base vazios na tela
+            if not grupos:
+                continue
 
             resultado.append({
                 "base": base,
