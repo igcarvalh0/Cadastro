@@ -379,7 +379,13 @@ const nivelIgnoraVinculos = computed(
 // Sugestões vindas do que já está cadastrado nas vagas, para não digitar
 // setor e supervisor de novo — mas o campo aceita texto novo também.
 const opcoesVinculo = computed(() => {
-  const mapa = { BASE: new Set(), SETOR: new Set(), SUPERVISOR: new Set(), COORDENADOR: new Set() }
+  const mapa = {
+    BASE: new Set(),
+    TIPO_EQUIPE: new Set(),
+    SETOR: new Set(),
+    SUPERVISOR: new Set(),
+    COORDENADOR: new Set()
+  }
 
   for (const equipe of equipes.value) {
     if (equipe.base) {
@@ -387,6 +393,11 @@ const opcoesVinculo = computed(() => {
     }
 
     for (const vaga of equipe.vagas || []) {
+      const tipo = String(vaga.tipo || '').trim()
+      if (tipo) {
+        mapa.TIPO_EQUIPE.add(tipo)
+      }
+
       for (const campo of ['setor', 'supervisor', 'coordenador']) {
         const valor = String(vaga[campo] || '').trim()
 

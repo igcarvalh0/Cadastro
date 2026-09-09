@@ -68,9 +68,14 @@ A senha e pedida sem aparecer na tela e vai para o banco apenas como hash
 - O **nivel** diz o que a pessoa pode fazer. Definido em `auth.py`, em `NIVEIS`:
   e o unico lugar a mexer para criar ou alterar um nivel. A tela de usuarios le
   essa tabela, entao um nivel novo aparece no formulario sozinho.
-- Os **vinculos** dizem sobre quais equipes ela age (base, setor, supervisor,
-  coordenador). Sem nenhum vinculo, a pessoa alcanca todas as equipes.
+- Os **vinculos** dizem sobre quais equipes ela age (base, tipo de equipe,
+  setor, supervisor, coordenador). Sem nenhum vinculo, a pessoa alcanca todas
+  as equipes.
 - `MESTRE` tem todas as permissoes e ignora vinculos.
+- `SUPERVISOR` ve o resumo e as equipes inteiros, mas so aloca ou remove
+  colaborador nas vagas cuja base **e** cujo tipo de equipe estejam nos
+  vinculos dele (as duas coisas ao mesmo tempo). A checagem fica em
+  `auth.pode_atuar_na_base_e_tipo`.
 
 `SECRET_KEY` no `.env` assina o cookie de sessao. Trocar esse valor desloga
 todo mundo; nao ter o valor faz as sessoes cairem a cada reinicio do servidor.

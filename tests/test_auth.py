@@ -79,6 +79,50 @@ def test_todo_nivel_declara_permissoes_validas():
         assert dados["descricao"], nome
 
 
+def test_supervisor_nao_ignora_vinculos():
+    assert auth.NIVEIS[auth.NIVEL_SUPERVISOR]["ignora_vinculos"] is False
+
+
+def test_supervisor_pode_alocar_mas_nao_gerenciar_usuarios():
+    permissoes = auth.NIVEIS[auth.NIVEL_SUPERVISOR]["permissoes"]
+    assert auth.ALOCAR in permissoes
+    assert auth.GERENCIAR_USUARIOS not in permissoes
+
+
+# ============================================================
+# ESCOPO DE BASE E TIPO DE EQUIPE
+# ============================================================
+
+def test_mestre_pode_atuar_em_qualquer_base_e_tipo():
+    mestre = {"ignora_vinculos": True, "vinculos": {}}
+    assert auth.pode_atuar_na_base_e_tipo(mestre, "BACABAL", "PODA") is True
+
+
+def test_sem_usuario_nao_pode_atuar():
+    assert auth.pode_atuar_na_base_e_tipo(None, "BACABAL", "PODA") is False
+
+
+def test_supervisor_so_atua_onde_tem_os_dois_vinculos():
+    supervisor = {
+        "ignora_vinculos": False,
+        "vinculos": {
+            auth.VINCULO_BASE: ["BACABAL"],
+            auth.VINCULO_TIPO_EQUIPE: ["PODA"],
+        },
+    }
+
+    assert auth.pode_atuar_na_base_e_tipo(supervisor, "BACABAL", "PODA") is True
+    # base bate, mas o tipo nao esta entre os vinculados
+    assert auth.pode_atuar_na_base_e_tipo(supervisor, "BACABAL", "CONSTRUÇÃO") is False
+    # tipo bate, mas a base nao esta entre as vinculadas
+    assert auth.pode_atuar_na_base_e_tipo(supervisor, "SÃO LUÍS", "PODA") is False
+
+
+def test_supervisor_sem_vinculos_nao_atua_em_nada():
+    supervisor = {"ignora_vinculos": False, "vinculos": {}}
+    assert auth.pode_atuar_na_base_e_tipo(supervisor, "BACABAL", "PODA") is False
+
+
 # ============================================================
 # VÍNCULOS
 # ============================================================

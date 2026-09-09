@@ -44,20 +44,30 @@ TODAS_PERMISSOES = (
 )
 
 NIVEL_MESTRE = "MESTRE"
+NIVEL_SUPERVISOR = "SUPERVISOR"
 
 # ------------------------------------------------------------
 # NIVEIS
 # ------------------------------------------------------------
-# Só MESTRE está definido por enquanto. Os demais niveis entram aqui quando
-# as regras forem definidas: basta uma linha nova com o nome e a lista de
-# permissoes. A tela de usuarios le esta tabela, entao um nivel novo aparece
-# no formulario sem precisar mexer no frontend.
+# Os demais niveis entram aqui quando as regras forem definidas: basta uma
+# linha nova com o nome e a lista de permissoes. A tela de usuarios le esta
+# tabela, entao um nivel novo aparece no formulario sem precisar mexer no
+# frontend.
 NIVEIS = {
     NIVEL_MESTRE: {
         "rotulo": "Mestre",
         "descricao": "Acesso total, inclusive ao cadastro de usuários.",
         "permissoes": set(TODAS_PERMISSOES),
         "ignora_vinculos": True,
+    },
+    NIVEL_SUPERVISOR: {
+        "rotulo": "Supervisor",
+        "descricao": (
+            "Visualiza o resumo e as equipes; aloca e remove colaboradores "
+            "somente nas bases e nos tipos de equipe vinculados a ele."
+        ),
+        "permissoes": {VER_RESUMO, VER_EQUIPES, ALOCAR},
+        "ignora_vinculos": False,
     },
 }
 
@@ -67,12 +77,14 @@ NIVEIS = {
 # ============================================================
 
 VINCULO_BASE = "BASE"
+VINCULO_TIPO_EQUIPE = "TIPO_EQUIPE"
 VINCULO_SETOR = "SETOR"
 VINCULO_SUPERVISOR = "SUPERVISOR"
 VINCULO_COORDENADOR = "COORDENADOR"
 
 TIPOS_VINCULO = {
     VINCULO_BASE: "Base",
+    VINCULO_TIPO_EQUIPE: "Tipo de equipe",
     VINCULO_SETOR: "Setor",
     VINCULO_SUPERVISOR: "Supervisor",
     VINCULO_COORDENADOR: "Coordenador",
@@ -177,6 +189,25 @@ def descrever_usuario(usuario, incluir_vinculos=True):
 def tem_permissao(permissao, usuario=None):
     usuario = usuario or usuario_logado()
     return bool(usuario) and permissao in usuario["permissoes"]
+
+
+def pode_atuar_na_base_e_tipo(usuario, base, tipo_equipe):
+    """Diz se o usuario pode alocar/remover numa vaga daquela base e tipo.
+
+    MESTRE (ignora_vinculos) sempre pode. Os demais precisam ter um vinculo
+    BASE que bata com a base da vaga E um vinculo TIPO_EQUIPE que bata com o
+    tipo dela — as duas coisas ao mesmo tempo, nao uma ou outra.
+    """
+    if not usuario:
+        return False
+    if usuario.get("ignora_vinculos"):
+        return True
+
+    vinculos = usuario.get("vinculos") or {}
+    bases = set(vinculos.get(VINCULO_BASE, []))
+    tipos = set(vinculos.get(VINCULO_TIPO_EQUIPE, []))
+
+    return base in bases and tipo_equipe in tipos
 
 
 # ============================================================

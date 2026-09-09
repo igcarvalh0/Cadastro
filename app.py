@@ -820,7 +820,15 @@ def atualizar_equipe(equipe_id):
 @exige_permissao(auth.ALOCAR)
 def remover_todas_alocacoes():
     """Libera todas as vagas do sistema de uma vez. As vagas continuam
-    cadastradas: some so o vinculo com o colaborador."""
+    cadastradas: some so o vinculo com o colaborador.
+
+    So o nivel que ignora vinculos (MESTRE) pode: e uma acao sem escopo de
+    base/tipo, entao um supervisor restrito nao pode disparar por aqui."""
+    if not (auth.usuario_logado() or {}).get("ignora_vinculos"):
+        return jsonify({
+            "erro": "Apenas o nível mestre pode remover todas as alocações de uma vez."
+        }), 403
+
     session = SessionLocal()
     try:
         total = session.query(MembroEquipe).delete()
@@ -848,10 +856,14 @@ def remover_membros_equipe(equipe_id):
         if not equipe:
             return jsonify({"erro": "Equipe não encontrada."}), 404
 
+        usuario = auth.usuario_logado()
         membros = [
             composicao.membro
             for composicao in equipe.composicoes
             if composicao.membro
+            and auth.pode_atuar_na_base_e_tipo(
+                usuario, equipe.BASE, tipo_equipe_da_vaga(composicao)
+            )
         ]
 
         for membro in membros:
@@ -1788,6 +1800,20 @@ def alocar_colaborador():
             if not composicao:
                 return jsonify({"erro": "Vaga não encontrada."}), 404
 
+            # consulta separada: FOR UPDATE nao pode ir junto de outer join
+            equipe_da_vaga = (
+                session.query(Equipe).filter(Equipe.id == composicao.equipe_id).first()
+            )
+
+            if not auth.pode_atuar_na_base_e_tipo(
+                auth.usuario_logado(),
+                equipe_da_vaga.BASE if equipe_da_vaga else None,
+                tipo_equipe_da_vaga(composicao),
+            ):
+                return jsonify({
+                    "erro": "Seu acesso não cobre a base ou o tipo de equipe desta vaga."
+                }), 403
+
             if composicao.membro:
                 return jsonify({"erro": "Esta vaga já está ocupada."}), 400
 
@@ -1833,11 +1859,24 @@ def remover_colaborador():
     try:
         membro = (
             session.query(MembroEquipe)
+            .options(
+                joinedload(MembroEquipe.composicao).joinedload(ComposicaoEquipe.equipe)
+            )
             .filter(MembroEquipe.composicao_id == composicao_id)
             .first()
         )
         if not membro:
             return jsonify({"erro": "Não existe colaborador alocado nesta vaga."}), 404
+
+        composicao = membro.composicao
+        if not auth.pode_atuar_na_base_e_tipo(
+            auth.usuario_logado(),
+            composicao.equipe.BASE if composicao and composicao.equipe else None,
+            tipo_equipe_da_vaga(composicao) if composicao else None,
+        ):
+            return jsonify({
+                "erro": "Seu acesso não cobre a base ou o tipo de equipe desta vaga."
+            }), 403
 
         chapa = str(membro.CHAPA).strip()
         session.delete(membro)
