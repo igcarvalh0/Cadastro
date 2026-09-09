@@ -2,7 +2,7 @@
   <q-header elevated class="site-header text-white">
     <q-toolbar>
       <div class="site-logo q-mr-sm">
-        <img src="/icons/favicon-128x128.png" alt="CGB Energia" />
+        <img src="/icons/logo.png" alt="CGB Energia" />
       </div>
 
       <q-toolbar-title> {{ titulo }} </q-toolbar-title>

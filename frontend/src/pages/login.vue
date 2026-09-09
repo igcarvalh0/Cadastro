@@ -5,7 +5,7 @@
         <q-card bordered class="cartao-login">
           <q-card-section class="text-center q-pb-none">
             <div class="marca-login">
-              <img src="/icons/favicon-128x128.png" alt="CGB Energia" />
+              <img src="/icons/logo.png" alt="CGB Energia" />
             </div>
 
             <div class="text-h5 q-mt-md titulo-login">
@@ -31,12 +31,13 @@
               {{ erro }}
             </q-banner>
 
-            <q-form class="q-gutter-md" @submit.prevent="autenticar">
+            <q-form @submit.prevent="autenticar">
               <q-input
                 v-model="login"
                 outlined
                 dense
                 autofocus
+                class="q-mb-md"
                 label="Usuário"
                 autocomplete="username"
                 :disable="entrando"
@@ -50,6 +51,7 @@
                 v-model="senha"
                 outlined
                 dense
+                class="q-mb-md"
                 label="Senha"
                 autocomplete="current-password"
                 :type="mostrarSenha ? 'text' : 'password'"
