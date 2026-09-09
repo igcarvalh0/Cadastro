@@ -484,10 +484,15 @@ import { ref, computed, onMounted, watch } from 'vue'
 
 import CabecalhoApp from '../components/CabecalhoApp.vue'
 import {
+  CHAVE_BASES_SELECIONADAS,
+  ehEquipeFolguista,
   equipeCombinaComSetor,
   equipeCombinaComTipo,
+  normalizarSelecaoBases,
+  OPCAO_TODAS_BASES,
   opcoesSetorFiltro,
   opcoesTipoFiltro,
+  proximaSelecaoBases,
   SETOR_TODOS,
   TIPO_TODOS
 } from '../utils/equipes'
@@ -569,34 +574,6 @@ const vagasAlocacao = computed(() => {
 // BASES
 // ============================================================
 
-const OPCAO_TODAS_BASES = '__TODAS_BASES__'
-
-const CODIGOS_BASES = {
-  BACABAL: 'BCB',
-  ITAPECURU: 'ITM',
-  'ITAPECURU MIRIM': 'ITM',
-  'SANTA INES': 'STI',
-  'SPOT STI': 'SPOT STI',
-  PEDREIRAS: 'PDS',
-  'PRES DUTRA': 'PDT',
-  'PRESIDENTE DUTRA': 'PDT',
-  'BARRA DO CORDA': 'BDC'
-}
-
-function normalizarSelecaoBases(bases) {
-  if (!Array.isArray(bases)) {
-    return []
-  }
-
-  const valores = [...new Set(bases.filter(Boolean))]
-
-  if (valores.includes(OPCAO_TODAS_BASES)) {
-    return [OPCAO_TODAS_BASES]
-  }
-
-  return valores
-}
-
 function equipePreenchida(equipe) {
   const vagas = equipe.vagas || []
 
@@ -604,19 +581,25 @@ function equipePreenchida(equipe) {
 }
 
 function atualizarSelecaoBases(bases) {
-  const selecao = Array.isArray(bases) ? bases : []
+  baseSelecionada.value = proximaSelecaoBases(baseSelecionada.value, bases)
+}
 
-  if (
-    selecao.includes(OPCAO_TODAS_BASES) &&
-    baseSelecionada.value.includes(OPCAO_TODAS_BASES) &&
-    selecao.length > 1
-  ) {
-    baseSelecionada.value = selecao.filter(base => base !== OPCAO_TODAS_BASES)
-    return
+// nome da base -> sigla, montado a partir do que o servidor manda em cada
+// equipe. Antes era uma tabela fixa aqui, que saía do ar sempre que uma base
+// nova aparecia no backend.
+const codigosPorBase = computed(() => {
+  const mapa = {}
+
+  for (const equipe of equipes.value) {
+    const base = String(equipe.base || '').trim()
+
+    if (base && equipe.codigo_base) {
+      mapa[base] = equipe.codigo_base
+    }
   }
 
-  baseSelecionada.value = normalizarSelecaoBases(selecao)
-}
+  return mapa
+})
 
 const opcoesBases = computed(() => {
   const bases = [
@@ -634,9 +617,9 @@ const opcoesBases = computed(() => {
     }
 
     if (!bases.some(item => item.value === base)) {
-      const codigo = CODIGOS_BASES[base]
+      const codigo = codigosPorBase.value[base]
       bases.push({
-        label: codigo ? `${base} (${codigo})` : base,
+        label: codigo && codigo !== base ? `${base} (${codigo})` : base,
         value: base
       })
     }
@@ -682,16 +665,17 @@ const equipesFiltradas = computed(() => {
       return comparacaoBase
     }
 
-    const prefixoA = String(a.prefixo || '').trim()
-    const prefixoB = String(b.prefixo || '').trim()
-    const tipoA = prefixoA.toUpperCase() === 'FOLGUISTA' ? 1 : 0
-    const tipoB = prefixoB.toUpperCase() === 'FOLGUISTA' ? 1 : 0
+    // Folguista fica no fim da base, igual ao resto do sistema
+    const folguistaA = ehEquipeFolguista(a) ? 1 : 0
+    const folguistaB = ehEquipeFolguista(b) ? 1 : 0
 
-    if (tipoA !== tipoB) {
-      return tipoA - tipoB
+    if (folguistaA !== folguistaB) {
+      return folguistaA - folguistaB
     }
 
-    return prefixoA.localeCompare(prefixoB, 'pt-BR')
+    return String(a.prefixo || '')
+      .trim()
+      .localeCompare(String(b.prefixo || '').trim(), 'pt-BR')
   })
 })
 
@@ -711,7 +695,7 @@ const colaboradoresBase = computed(() => {
     baseSelecionada.value.some(
       base =>
         base === colaborador.base ||
-        CODIGOS_BASES[base] === colaborador.codigo_base
+        codigosPorBase.value[base] === colaborador.codigo_base
     )
   )
 })
@@ -1087,7 +1071,7 @@ onMounted(() => {
   carregarDados().then(() => {
     try {
       const filtroSalvo = JSON.parse(
-        localStorage.getItem('gerenciadorEquipes_basesSelecionadas') || '[]'
+        localStorage.getItem(CHAVE_BASES_SELECIONADAS) || '[]'
       )
 
       if (Array.isArray(filtroSalvo)) {
@@ -1122,7 +1106,7 @@ watch(
     }
 
     localStorage.setItem(
-      'gerenciadorEquipes_basesSelecionadas',
+      CHAVE_BASES_SELECIONADAS,
       JSON.stringify(basesNormalizadas)
     )
   },

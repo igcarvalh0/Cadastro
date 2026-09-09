@@ -57,10 +57,10 @@ class Equipe(Base):
     BASE = Column(String, nullable=False, index=True)
 
     PREFIXO = Column(
-    String,
-    nullable=False,
-    index=True
-)
+        String,
+        nullable=False,
+        index=True
+    )
 
     composicoes = relationship(
         "ComposicaoEquipe",

@@ -86,6 +86,11 @@
   --tipo-p10: #8a3f78;
   --tipo-outro: #6d5f63;
 
+  // tinta do texto sobre a cor da disciplina. No claro as cores sao escuras e
+  // pedem texto branco; no escuro elas clareiam e o branco fica ilegivel
+  // (ficava em torno de 2:1, contra os 4,5:1 minimos), entao inverte.
+  --tipo-tinta: #ffffff;
+
   --fonte-ui: 'Barlow Semi Condensed', 'Segoe UI', sans-serif;
   --fonte-texto: 'IBM Plex Sans', 'Segoe UI', sans-serif;
 }
@@ -126,6 +131,9 @@ body.body--dark {
   --tipo-p9: #d9c078;
   --tipo-p10: #d693c9;
   --tipo-outro: #b7a6aa;
+
+  // sobre as cores claras acima, o texto escuro passa de 8:1 em todas elas
+  --tipo-tinta: #1b1416;
 
   // o Quasar pinta o fundo escuro com #121212; aqui usamos o tom quente do tema
   background: var(--fundo);

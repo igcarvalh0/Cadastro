@@ -20,6 +20,8 @@ Microsoft/
 # Arquivos de ambiente / credenciais
 .env
 .env.*
+# o modelo nao tem segredo e o README manda copiar dele
+!.env.example
 
 # Logs
 *.log

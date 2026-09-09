@@ -2,6 +2,11 @@ export const TIPO_TODOS = 'TODOS'
 export const TIPO_FOLGUISTA = 'FOLGUISTA'
 export const OPCAO_TODAS_BASES = '__TODAS_BASES__'
 
+// O filtro de base é compartilhado entre as telas: quem escolhe uma base no
+// Banco de Dados encontra a mesma seleção no Resumo. Por isso a chave fica
+// aqui, e não repetida em cada página.
+export const CHAVE_BASES_SELECIONADAS = 'gerenciadorEquipes_basesSelecionadas'
+
 function normalizarTexto(texto) {
   return String(texto || '')
     .trim()
@@ -143,8 +148,9 @@ export function equipeNaSelecaoDeBases(equipe, selecao) {
 // FUNÇÕES DOS COLABORADORES
 // ============================================================
 
-// Espelha ORDEM_FUNCOES e padronizar_funcao do app.py, na mesma ordem de
-// exibição. Se mudar a regra lá, mudar aqui também.
+// Ordem de exibição das funções nas tabelas. Quem decide em que categoria cada
+// nome do cadastro cai é o padronizar_funcao do app.py — o servidor já manda a
+// função classificada, então essa regra não é repetida aqui.
 export const FUNCOES_SISTEMA = [
   'ENCARREGADO',
   'ELETRICISTA',
@@ -152,39 +158,3 @@ export const FUNCOES_SISTEMA = [
   'AUXILIAR DE ELETRICISTA',
   'PODADOR'
 ]
-
-// O cadastro traz nomes detalhados ("MOTORISTA OP DE GUINCHO", "ENCARREGADO
-// DE PODA", "ELETRICISTA MONTADOR"), então a regra é por palavra contida.
-export function padronizarFuncao(funcao) {
-  const original = String(funcao || '').trim().toUpperCase()
-
-  if (!original) {
-    return ''
-  }
-
-  const semAcento = original.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-
-  if (semAcento.includes('ENCARREGADO')) {
-    return 'ENCARREGADO'
-  }
-
-  if (semAcento.includes('MOTORISTA')) {
-    return 'MOTORISTA'
-  }
-
-  // precisa das duas palavras: existem AUXILIAR ADMINISTRATIVO, AUXILIAR DE
-  // ALMOXARIFADO e outros que não têm nada a ver com eletricista
-  if (semAcento.includes('AUXILIAR') && semAcento.includes('ELETRICISTA')) {
-    return 'AUXILIAR DE ELETRICISTA'
-  }
-
-  if (semAcento.includes('ELETRICISTA')) {
-    return 'ELETRICISTA'
-  }
-
-  if (semAcento.includes('PODADOR')) {
-    return 'PODADOR'
-  }
-
-  return original
-}

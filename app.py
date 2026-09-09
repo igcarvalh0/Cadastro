@@ -1,5 +1,6 @@
 import io
 import unicodedata
+from functools import lru_cache
 from pathlib import Path
 
 import pandas as pd
@@ -111,12 +112,23 @@ ORDEM_FUNCOES = {
 # FUNÇÕES AUXILIARES
 # ============================================================
 
-def normalizar(texto):
-    if texto is None:
-        return ""
-    texto = str(texto).strip().upper()
+@lru_cache(maxsize=4096)
+def _normalizar_texto(texto):
+    texto = texto.strip().upper()
     texto = unicodedata.normalize("NFD", texto)
     return "".join(c for c in texto if unicodedata.category(c) != "Mn")
+
+
+def normalizar(texto):
+    """Caixa alta e sem acento, para comparar nomes vindos de fontes diferentes.
+
+    O resultado so depende do texto, entao fica em cache: uma unica carga do
+    resumo chama esta funcao alguns milhares de vezes sobre um punhado de
+    valores repetidos (bases, prefixos, funcoes).
+    """
+    if texto is None:
+        return ""
+    return _normalizar_texto(str(texto))
 
 
 def padronizar_funcao(funcao):
@@ -148,7 +160,7 @@ def padronizar_funcao(funcao):
     if "PODADOR" in funcao_norm:
         return "PODADOR"
 
-    # demais funcoes (Podador, etc.): exibe em caixa alta, igual as outras
+    # funcoes administrativas e afins: exibe em caixa alta, igual as outras
     return str(funcao).strip().upper()
 
 
@@ -157,9 +169,19 @@ def ordem_funcao(funcao):
     return ORDEM_FUNCOES.get(funcao_padrao, 99)
 
 
-def StringOrdenacaoFolguista(prefixo):
-    prefixo = str(prefixo).strip().upper()
-    return 1 if prefixo == "FOLGUISTA" else 0
+def ordem_folguista(prefixo):
+    """Chave de ordenacao: a equipe Folguista aparece depois das demais."""
+    return 1 if normalizar(prefixo) == "FOLGUISTA" else 0
+
+
+def chapas_alocadas_do_banco(session):
+    """CHAPAs que ja ocupam alguma vaga."""
+    return {
+        str(registro.CHAPA).strip()
+        for registro in session.query(MembroEquipe.CHAPA)
+        .filter(MembroEquipe.CHAPA.isnot(None))
+        .all()
+    }
 
 
 def base_da_secao(secao):
@@ -399,27 +421,27 @@ def obter_resumo():
             for codigo, dados in pessoas_disponiveis.items()
         ]
 
-        chapas_alocadas = {
-            str(r.CHAPA).strip()
-            for r in session.query(MembroEquipe.CHAPA).filter(MembroEquipe.CHAPA.isnot(None)).all()
-        }
+        chapas_alocadas = chapas_alocadas_do_banco(session)
 
-        lista_nao_alocados = []
-        for colab in session.query(Colaborador).order_by(Colaborador.NOME).all():
-            chapa = str(colab.CHAPA).strip()
-            if chapa in chapas_alocadas:
+        # So as contagens por base e funcao. Os nomes ficam de fora de proposito:
+        # eram 175 KB dos 185 KB da resposta, e a tela mostra apenas o numero ate
+        # alguem abrir uma celula. Os nomes vem por /api/pessoas-nao-alocadas.
+        nao_alocados = {}
+        for colab in session.query(Colaborador).all():
+            if str(colab.CHAPA).strip() in chapas_alocadas:
                 continue
 
-            secao = str(colab.SEÇÃO).strip() if colab.SEÇÃO else ""
-            dados_base = base_da_secao(secao)
-            lista_nao_alocados.append({
-                "chapa": chapa,
-                "nome": str(colab.NOME).strip() if colab.NOME else "",
-                "funcao": str(colab.FUNÇÃO).strip() if colab.FUNÇÃO else "",
-                "secao": secao,
+            funcao = padronizar_funcao(colab.FUNÇÃO)
+            if funcao not in ORDEM_FUNCOES:
+                continue
+
+            dados_base = base_da_secao(colab.SEÇÃO)
+            registro = nao_alocados.setdefault(dados_base["codigo"], {
                 "base": dados_base["nome"],
                 "codigo": dados_base["codigo"],
+                "funcoes": {},
             })
+            registro["funcoes"][funcao] = registro["funcoes"].get(funcao, 0) + 1
 
         bases_filtro = [{"base": item["base"], "codigo": item["codigo"]} for item in resultado]
 
@@ -431,11 +453,57 @@ def obter_resumo():
             "tipos_filtro": sorted(tipos_existentes),
             "tipo_selecionado": filtro_tipo,
             "pessoas_disponiveis": lista_disponiveis,
-            "pessoas_nao_alocadas": lista_nao_alocados,
+            "nao_alocados_por_base": list(nao_alocados.values()),
         })
     except Exception as erro:
         print(f"[ERRO] obter_resumo: {erro}")
         return jsonify({"erro": "Não foi possível carregar o resumo."}), 500
+    finally:
+        session.close()
+
+
+@app.route("/api/pessoas-nao-alocadas", methods=["GET"])
+def obter_pessoas_nao_alocadas():
+    """Nomes de quem esta sem vaga, de uma funcao e das bases pedidas.
+
+    Separado do resumo porque a lista inteira passa de mil nomes: o resumo so
+    precisa das contagens e busca os nomes quando alguem abre uma celula.
+    Aceita 'base' repetido (?base=BCB&base=STI) para acompanhar o filtro da tela.
+    """
+    filtro_funcao = request.args.get("funcao", "").strip()
+    filtro_bases = {b.strip() for b in request.args.getlist("base") if b.strip()}
+
+    session = SessionLocal()
+    try:
+        chapas_alocadas = chapas_alocadas_do_banco(session)
+
+        resultado = []
+        for colab in session.query(Colaborador).order_by(Colaborador.NOME).all():
+            chapa = str(colab.CHAPA).strip()
+            if chapa in chapas_alocadas:
+                continue
+
+            if filtro_funcao and padronizar_funcao(colab.FUNÇÃO) != filtro_funcao:
+                continue
+
+            secao = str(colab.SEÇÃO).strip() if colab.SEÇÃO else ""
+            dados_base = base_da_secao(secao)
+            if filtro_bases and dados_base["codigo"] not in filtro_bases:
+                continue
+
+            resultado.append({
+                "chapa": chapa,
+                "nome": str(colab.NOME).strip() if colab.NOME else "",
+                "funcao": str(colab.FUNÇÃO).strip() if colab.FUNÇÃO else "",
+                "secao": secao,
+                "base": dados_base["nome"],
+                "codigo": dados_base["codigo"],
+            })
+
+        return jsonify(resultado)
+    except Exception as erro:
+        print(f"[ERRO] obter_pessoas_nao_alocadas: {erro}")
+        return jsonify({"erro": "Não foi possível carregar os não alocados."}), 500
     finally:
         session.close()
 
@@ -487,10 +555,14 @@ def obter_equipes():
                     } if colaborador else None,
                 })
 
+            base_equipe = equipe.BASE or ""
             resultado.append({
                 "id": equipe.id,
                 "prefixo": equipe.PREFIXO or "",
-                "base": equipe.BASE or "",
+                "base": base_equipe,
+                # a sigla vem pronta do servidor para a tela nao precisar manter
+                # uma copia propria do de/para das bases
+                "codigo_base": DE_PARA_BASES.get(normalizar(base_equipe), base_equipe),
                 "tipos": tipos_da_equipe(equipe),
                 "setores": setores_da_equipe(equipe),
                 "folguista": eh_folguista(equipe.PREFIXO),
@@ -499,7 +571,7 @@ def obter_equipes():
 
         resultado.sort(
             key=lambda equipe: (
-                StringOrdenacaoFolguista(equipe["prefixo"]),
+                ordem_folguista(equipe["prefixo"]),
                 equipe["prefixo"],
             )
         )
@@ -1041,8 +1113,7 @@ def analisar_planilha_equipes(arquivo, session):
 
         faltam = {}     # (tipo, funcao) -> quantidade a acrescentar
         sobram = {}     # (tipo, funcao) -> [composicoes livres a remover]
-        atualizacoes_metadado = []  # vagas cuja quantidade nao mudou, so o responsavel
-        problema = None
+        atualizacoes_metadado = []  # vagas que ficam e trocaram de responsavel
 
         for chave in sorted(set(list(desejado.keys()) + list(atual.keys()))):
             tipo_chave, funcao = chave
@@ -1064,26 +1135,32 @@ def analisar_planilha_equipes(arquivo, session):
                     existentes,
                     key=lambda c: (c.membro is None, -c.id),
                 )[: -diferenca]
-            elif existentes and tipo_chave in metadados_por_tipo:
+
+            # O responsavel vale para toda vaga que CONTINUA nesta disciplina,
+            # tenha a quantidade mudado ou nao. Antes isso so era avaliado quando
+            # a quantidade ficava igual, entao mudar responsavel e quantidade na
+            # mesma linha deixava as vagas antigas com o responsavel velho.
+            # As que saem ficam de fora: ou serao apagadas, ou serao retipadas e
+            # recebem o responsavel da disciplina de destino.
+            saindo = {c.id for c in sobram.get(chave, [])}
+            permanecem = [c for c in existentes if c.id not in saindo]
+
+            if permanecem and tipo_chave in metadados_por_tipo:
                 desejados = metadados_por_tipo[tipo_chave]
                 precisa = any(
                     (c.SETOR or None) != desejados["setor"]
                     or (c.SUPERVISOR or None) != desejados["supervisor"]
                     or (c.COORDENADOR or None) != desejados["coordenador"]
-                    for c in existentes
+                    for c in permanecem
                 )
                 if precisa:
                     atualizacoes_metadado.append({
                         "funcao": funcao,
-                        "atualizar_metadados": len(existentes),
+                        "atualizar_metadados": len(permanecem),
                         "tipo": tipo_chave,
-                        "ids": [c.id for c in existentes],
+                        "ids": [c.id for c in permanecem],
                         **desejados,
                     })
-
-        if problema:
-            registrar_erro(primeira["numero"], primeira["rotulo"], problema)
-            continue
 
         # --- casa sobra com falta na MESMA funcao: isso e trocar o tipo da vaga ---
         mudancas = []
@@ -1473,7 +1550,7 @@ def obter_opcoes_alocacao():
         for base in resultado:
             resultado[base].sort(
                 key=lambda eq: (
-                    StringOrdenacaoFolguista(eq["prefixo"]),
+                    ordem_folguista(eq["prefixo"]),
                     eq["prefixo"],
                 )
             )
@@ -1495,12 +1572,7 @@ def obter_colaboradores():
     session = SessionLocal()
     try:
         colaboradores = session.query(Colaborador).order_by(Colaborador.NOME).all()
-        registros_alocados = (
-            session.query(MembroEquipe.CHAPA)
-            .filter(MembroEquipe.CHAPA.isnot(None))
-            .all()
-        )
-        chapas_alocadas = {str(r.CHAPA).strip() for r in registros_alocados}
+        chapas_alocadas = chapas_alocadas_do_banco(session)
 
         resultado = []
         for colaborador in colaboradores:

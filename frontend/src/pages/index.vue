@@ -69,10 +69,12 @@
                     v-for="grupo in totalExibido.grupos"
                     :key="grupo.rotulo"
                     clickable
-                    text-color="white"
                     class="chip-tipo"
                     :class="{ ativo: tipoEstaFiltrado(grupo) }"
-                    :style="{ background: corDoTipo(grupo) }"
+                    :style="{
+                      background: corDoTipo(grupo),
+                      color: 'var(--tipo-tinta)'
+                    }"
                     @click="alternarFiltroTipo(grupo)"
                   >
                     {{ grupo.equipes }} {{ rotuloCurto(grupo) }}
@@ -153,10 +155,12 @@
                         :key="grupo.rotulo"
                         clickable
                         size="sm"
-                        text-color="white"
                         class="chip-tipo"
                         :class="{ ativo: tipoEstaFiltrado(grupo) }"
-                        :style="{ background: corDoTipo(grupo) }"
+                        :style="{
+                          background: corDoTipo(grupo),
+                          color: 'var(--tipo-tinta)'
+                        }"
                         @click="alternarFiltroTipo(grupo)"
                       >
                         {{ grupo.equipes }} {{ rotuloCurto(grupo) }}
@@ -486,6 +490,7 @@
                     color="positive"
                     icon="download"
                     label="Exportar Excel"
+                    :disable="carregandoNaoAlocados || !naoAlocadosDetalhes.length"
                     @click="exportarNaoAlocados"
                   />
 
@@ -499,8 +504,9 @@
                     flat
                     bordered
                     dense
-                    :rows="naoAlocadosDetalhesExibidos"
+                    :rows="naoAlocadosDetalhes"
                     :columns="colunasNaoAlocadosDetalhes"
+                    :loading="carregandoNaoAlocados"
                     hide-pagination
                     :rows-per-page-options="[0]"
                     no-data-label="Nenhum colaborador encontrado"
@@ -546,7 +552,11 @@
 import { ref, computed, onMounted, watch } from 'vue'
 
 import CabecalhoApp from '../components/CabecalhoApp.vue'
-import { FUNCOES_SISTEMA, padronizarFuncao } from '../utils/equipes'
+import {
+  CHAVE_BASES_SELECIONADAS,
+  FUNCOES_SISTEMA,
+  OPCAO_TODAS_BASES
+} from '../utils/equipes'
 
 // mantem /resumo valendo como atalho para a tela principal
 definePage({ alias: '/resumo' })
@@ -556,20 +566,6 @@ definePage({ alias: '/resumo' })
 // ============================================================
 
 const bases = ref([])
-
-const total = ref({
-  equipes: {
-    CONSTRUÇÃO: 0,
-
-    FOLGUISTA: 0
-  },
-
-  vagas: 0,
-
-  alocados: 0,
-
-  diferenca: 0
-})
 
 const basesFiltro = ref([])
 
@@ -583,7 +579,10 @@ const erro = ref('')
 
 const pessoasDisponiveis = ref([])
 
-const pessoasNaoAlocadas = ref([])
+// contagem por base (vem no resumo) e nomes da célula aberta (vêm sob demanda)
+const naoAlocadosPorBase = ref([])
+const naoAlocadosDetalhes = ref([])
+const carregandoNaoAlocados = ref(false)
 
 const naoAlocadosAbertos = ref(false)
 
@@ -608,11 +607,6 @@ const necessidadeSelecionada = ref({
 })
 
 // ============================================================
-// COLUNAS
-// ============================================================
-
-
-// ============================================================
 // OPÇÕES DE BASE
 // ============================================================
 
@@ -632,7 +626,7 @@ const opcoesBases = computed(() => {
 const basesExibidas = computed(() => {
   if (
     !baseSelecionada.value.length ||
-    baseSelecionada.value.includes('__TODAS_BASES__')
+    baseSelecionada.value.includes(OPCAO_TODAS_BASES)
   ) {
     return bases.value
   }
@@ -933,24 +927,18 @@ const indicadoresFuncoes = computed(() => {
   })
 })
 
-const pessoasNaoAlocadasFiltradas = computed(() => {
-  const codigosBases = new Set(basesExibidas.value.map(base => base.codigo))
-
-  return pessoasNaoAlocadas.value.filter(pessoa =>
-    codigosBases.has(pessoa.codigo)
-  )
-})
-
+// O resumo traz so a contagem por base e função; os nomes chegam por
+// /api/pessoas-nao-alocadas quando alguém abre uma célula.
 const linhasNaoAlocadas = computed(() => {
+  const porCodigo = new Map(
+    naoAlocadosPorBase.value.map(base => [base.codigo, base.funcoes || {}])
+  )
+
   return FUNCOES_SISTEMA.map(funcao => {
     const linha = { funcao, total: 0 }
 
     for (const base of basesExibidas.value) {
-      const quantidade = pessoasNaoAlocadasFiltradas.value.filter(
-        pessoa =>
-          pessoa.codigo === base.codigo &&
-          padronizarFuncao(pessoa.funcao) === funcao
-      ).length
+      const quantidade = porCodigo.get(base.codigo)?.[funcao] || 0
 
       linha[base.codigo] = quantidade
       linha.total += quantidade
@@ -958,15 +946,6 @@ const linhasNaoAlocadas = computed(() => {
 
     return linha
   })
-})
-
-const naoAlocadosDetalhesExibidos = computed(() => {
-  return pessoasNaoAlocadasFiltradas.value.filter(
-    pessoa =>
-      padronizarFuncao(pessoa.funcao) === naoAlocadosSelecionados.value.funcao &&
-      (!naoAlocadosSelecionados.value.codigo ||
-        pessoa.codigo === naoAlocadosSelecionados.value.codigo)
-  )
 })
 
 const naoAlocadosTitulo = computed(() => {
@@ -1054,9 +1033,44 @@ function abrirDetalhes(funcao, codigo = '') {
   detalhesAbertos.value = true
 }
 
-function abrirNaoAlocados(funcao, codigo = '') {
+async function abrirNaoAlocados(funcao, codigo = '') {
   naoAlocadosSelecionados.value = { funcao, codigo }
   naoAlocadosAbertos.value = true
+  naoAlocadosDetalhes.value = []
+
+  // sem base escolhida, respeita as bases que estão visíveis no filtro
+  const codigos = codigo
+    ? [codigo]
+    : basesExibidas.value.map(base => base.codigo)
+
+  if (!codigos.length) {
+    return
+  }
+
+  carregandoNaoAlocados.value = true
+
+  try {
+    const parametros = new URLSearchParams()
+
+    parametros.append('funcao', funcao)
+
+    for (const item of codigos) {
+      parametros.append('base', item)
+    }
+
+    const resposta = await fetch(`/api/pessoas-nao-alocadas?${parametros}`)
+    const dados = await resposta.json()
+
+    if (!resposta.ok || dados.erro) {
+      throw new Error(dados.erro || 'Erro ao carregar as pessoas não alocadas.')
+    }
+
+    naoAlocadosDetalhes.value = dados
+  } catch (e) {
+    erro.value = e.message || 'Erro ao carregar as pessoas não alocadas.'
+  } finally {
+    carregandoNaoAlocados.value = false
+  }
 }
 
 function abrirNecessidades(funcao, codigo = '', tipo = 'deficit') {
@@ -1110,7 +1124,7 @@ function exportarNaoAlocados() {
     'SEÇÃO',
     'BASE'
   ]
-  const linhas = naoAlocadosDetalhesExibidos.value.map(colaborador => [
+  const linhas = naoAlocadosDetalhes.value.map(colaborador => [
     colaborador.chapa,
     colaborador.nome,
     colaborador.funcao,
@@ -1161,20 +1175,12 @@ async function carregarResumo() {
 
     bases.value = dados.bases || []
 
-    total.value = dados.total || {
-      grupos: [],
-      equipes: 0,
-      vagas: 0,
-      alocados: 0,
-      diferenca: 0
-    }
-
     basesFiltro.value = dados.bases_filtro || []
     tiposFiltro.value = dados.tipos_filtro || []
 
     pessoasDisponiveis.value = dados.pessoas_disponiveis || []
 
-    pessoasNaoAlocadas.value = dados.pessoas_nao_alocadas || []
+    naoAlocadosPorBase.value = dados.nao_alocados_por_base || []
   } catch (e) {
     console.error(e)
 
@@ -1188,31 +1194,41 @@ async function carregarResumo() {
 // INICIALIZAÇÃO
 // ============================================================
 
-onMounted(() => {
-  carregarResumo().then(() => {
-    try {
-      const filtroSalvo = JSON.parse(
-        localStorage.getItem('gerenciadorEquipes_basesSelecionadas') || '[]'
-      )
+onMounted(async () => {
+  await carregarResumo()
 
-      if (Array.isArray(filtroSalvo)) {
-        const basesExistentes = opcoesBases.value.map(opcao => opcao.value)
-        baseSelecionada.value = filtroSalvo.filter(base =>
-          basesExistentes.includes(base)
-        )
-      }
-    } catch {
-      baseSelecionada.value = []
+  try {
+    const filtroSalvo = JSON.parse(
+      localStorage.getItem(CHAVE_BASES_SELECIONADAS) || '[]'
+    )
+
+    if (!Array.isArray(filtroSalvo)) {
+      return
     }
-  })
+
+    // Nesta tela "todas as bases" é o mesmo que nenhuma marcada. As outras
+    // telas gravam a opção explícita, então ela é aceita na leitura.
+    if (filtroSalvo.includes(OPCAO_TODAS_BASES)) {
+      baseSelecionada.value = []
+      return
+    }
+
+    const basesExistentes = new Set(opcoesBases.value.map(opcao => opcao.value))
+
+    baseSelecionada.value = filtroSalvo.filter(base => basesExistentes.has(base))
+  } catch {
+    baseSelecionada.value = []
+  }
 })
 
 watch(
   baseSelecionada,
-  bases => {
+  selecao => {
+    // grava no formato que as outras telas leem, para a seleção continuar
+    // valendo ao trocar de aba
     localStorage.setItem(
-      'gerenciadorEquipes_basesSelecionadas',
-      JSON.stringify(bases.length ? bases : ['__TODAS_BASES__'])
+      CHAVE_BASES_SELECIONADAS,
+      JSON.stringify(selecao.length ? selecao : [OPCAO_TODAS_BASES])
     )
   },
   { deep: true }
