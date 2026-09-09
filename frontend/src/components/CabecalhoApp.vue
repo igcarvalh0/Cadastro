@@ -1,9 +1,8 @@
 <template>
   <q-header elevated class="site-header text-white">
     <q-toolbar>
-      <div class="site-logo logo-tema q-mr-sm">
-        <img class="logo-claro" src="/icons/logo-claro.png" alt="CGB Energia" />
-        <img class="logo-escuro" src="/icons/logo-escuro.png" alt="CGB Energia" />
+      <div class="site-logo q-mr-sm">
+        <img src="/icons/favicon-128x128.png" alt="CGB Energia" />
       </div>
 
       <q-toolbar-title> {{ titulo }} </q-toolbar-title>

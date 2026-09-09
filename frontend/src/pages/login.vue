@@ -4,9 +4,8 @@
       <q-page class="tela-login flex flex-center q-pa-md">
         <q-card bordered class="cartao-login">
           <q-card-section class="text-center q-pb-none">
-            <div class="marca-login logo-tema">
-              <img class="logo-claro" src="/icons/logo-claro.png" alt="CGB Energia" />
-              <img class="logo-escuro" src="/icons/logo-escuro.png" alt="CGB Energia" />
+            <div class="marca-login">
+              <img src="/icons/favicon-128x128.png" alt="CGB Energia" />
             </div>
 
             <div class="text-h5 q-mt-md titulo-login">
