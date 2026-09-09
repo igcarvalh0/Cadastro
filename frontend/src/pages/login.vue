@@ -163,7 +163,10 @@ onMounted(restaurarModoNoturno)
 }
 
 .marca-login img {
-  width: 73.6px; /* 64px + 15% */
-  height: 70.4px; /* 64px + 10% */
+  /* a arte e um logo largo (1512x596px), nao um icone quadrado: largura fixa
+     estica o desenho. Altura fixa + largura automatica preserva a proporcao
+     real do arquivo, entao nunca distorce, mesmo se a arte for trocada. */
+  height: 70.4px;
+  width: auto;
 }
 </style>
