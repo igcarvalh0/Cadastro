@@ -78,11 +78,8 @@ def servir_icones_frontend(arquivo):
 
 
 @app.route("/favicon.ico")
-@app.route("/favicon-escuro.ico")
 def servir_favicon_frontend():
-    # uma arte por tema; quem escolhe qual servir e o useModoNoturno.js.
-    # so estes dois caminhos casam com a rota, entao nao ha o que sanear.
-    return send_from_directory(FRONTEND_DIST_DIR, request.path.lstrip("/"))
+    return send_from_directory(FRONTEND_DIST_DIR, "favicon.ico")
 
 
 # ============================================================

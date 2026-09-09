@@ -1265,6 +1265,7 @@ watch(
 /* celula de grupo mesclada: uma vez por disciplina, abrangendo suas funcoes */
 .celula-grupo {
   vertical-align: middle;
+  text-align: center;
   border-left: 4px solid var(--cor-grupo, var(--marca));
   background: var(--superficie-2);
   white-space: nowrap;
@@ -1276,7 +1277,8 @@ watch(
   font-family: var(--fonte-ui);
   font-weight: 700;
   font-size: 1.1rem;
-  letter-spacing: 0.06em;
+  /* mais espaçada para a cor da disciplina ocupar mais area visivel */
+  letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--cor-grupo, var(--marca));
 }

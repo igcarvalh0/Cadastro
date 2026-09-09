@@ -5,7 +5,7 @@
         <q-card bordered class="cartao-login">
           <q-card-section class="text-center q-pb-none">
             <div class="marca-login">
-              <img src="/icons/logo.png" alt="CGB Energia" />
+              <img src="/icons/logo-login.png" alt="CGB Energia" />
             </div>
 
             <div class="text-h5 q-mt-md titulo-login">
