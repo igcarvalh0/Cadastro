@@ -11,8 +11,9 @@ export default defineConfig((/* ctx */) => {
     // app boot file (/src/boot)
     // --> boot files are part of "main.js"
     // https://v2.quasar.dev/quasar-cli-vite/boot-files
-    // trata a sessão expirada em um lugar só (ver src/boot/sessao.js)
-    boot: ['sessao'],
+    // tema: aplica o modo salvo (e o favicon) antes da primeira tela montar
+    // sessao: trata a sessão expirada em um lugar só
+    boot: ['tema', 'sessao'],
 
     // https://v2.quasar.dev/quasar-cli-vite/quasar-config-file#css
     css: ['app.scss'],
