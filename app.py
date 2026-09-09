@@ -77,6 +77,11 @@ def servir_icones_frontend(arquivo):
     return send_from_directory(FRONTEND_DIST_DIR / "icons", arquivo)
 
 
+@app.route("/videos/<path:arquivo>")
+def servir_videos_frontend(arquivo):
+    return send_from_directory(FRONTEND_DIST_DIR / "videos", arquivo)
+
+
 @app.route("/favicon.ico")
 def servir_favicon_frontend():
     return send_from_directory(FRONTEND_DIST_DIR, "favicon.ico")

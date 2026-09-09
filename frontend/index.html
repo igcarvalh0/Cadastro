@@ -11,6 +11,12 @@
       name="viewport"
       content="width=device-width, initial-scale=1<% if (ctx.mode.cordova || ctx.mode.capacitor) { %>, maximum-scale=1, minimum-scale=1, user-scalable=no, viewport-fit=cover<% } %>"
     />
+    <!-- Sem isso, alguns navegadores (e o modo escuro forcado do Windows/Chrome)
+         nao sabem que a propria pagina ja controla claro/escuro, e aplicam um
+         filtro de escurecimento automatico por cima de tudo — o efeito e um
+         veu acinzentado cobrindo a tela inteira, mesmo com as cores certas
+         por baixo. Aqui a pagina avisa que os dois esquemas sao suportados. -->
+    <meta name="color-scheme" content="light dark" />
     <meta
       http-equiv="Content-Security-Policy"
       content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline';<% if (ctx.dev) { %> connect-src 'self' ws://localhost:*; worker-src 'self' blob:;<% } %>"

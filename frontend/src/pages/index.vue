@@ -1,5 +1,7 @@
 <template>
   <q-layout view="lHh Lpr lFf">
+    <MarcaDaguaFundo />
+
     <CabecalhoApp
       titulo="Resumo"
       :carregando="carregando"
@@ -552,6 +554,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 
 import CabecalhoApp from '../components/CabecalhoApp.vue'
+import MarcaDaguaFundo from '../components/MarcaDaguaFundo.vue'
 import {
   CHAVE_BASES_SELECIONADAS,
   FUNCOES_SISTEMA,

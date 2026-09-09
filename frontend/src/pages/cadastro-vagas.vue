@@ -1,5 +1,7 @@
 <template>
   <q-layout view="lHh Lpr lFf">
+    <MarcaDaguaFundo />
+
     <CabecalhoApp
       titulo="Cadastro de Vagas"
       :carregando="carregando"
@@ -643,6 +645,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 
 import CabecalhoApp from '../components/CabecalhoApp.vue'
+import MarcaDaguaFundo from '../components/MarcaDaguaFundo.vue'
 import {
   equipeCombinaComSetor,
   equipeCombinaComTipo,

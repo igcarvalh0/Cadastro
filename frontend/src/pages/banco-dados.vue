@@ -1,5 +1,7 @@
 <template>
   <q-layout view="lHh Lpr lFf">
+    <MarcaDaguaFundo />
+
     <CabecalhoApp
       titulo="Banco de Dados"
       :carregando="carregando"
@@ -483,6 +485,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 
 import CabecalhoApp from '../components/CabecalhoApp.vue'
+import MarcaDaguaFundo from '../components/MarcaDaguaFundo.vue'
 import {
   CHAVE_BASES_SELECIONADAS,
   ehEquipeFolguista,

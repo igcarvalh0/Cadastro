@@ -42,11 +42,58 @@
   src: url('/fonts/ibm-plex-sans-400.woff2') format('woff2');
 }
 
+// Inter: usada so na tela de login (visual proprio, pedido a parte pelo
+// Igor). E uma fonte variavel: um arquivo so cobre todos os pesos abaixo.
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/inter-variable.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('/fonts/inter-variable.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('/fonts/inter-variable.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/inter-variable.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 800;
+  font-display: swap;
+  src: url('/fonts/inter-variable.woff2') format('woff2');
+}
+
 // ============================================================
 // TEMA
 // ============================================================
 
 :root {
+  // reforca por CSS o que o <meta name="color-scheme"> ja diz no HTML:
+  // qual esquema esta ativo agora, pra nenhum navegador tentar escurecer a
+  // pagina por conta propria por cima do nosso proprio tema
+  color-scheme: light;
+
   --marca: #711424;
   --marca-clara: #8d2136;
   --titulo: #4f1723;
@@ -98,6 +145,17 @@
 }
 
 body.body--dark {
+  color-scheme: dark;
+
+  // o Quasar usa --q-dark/--q-dark-page como fundo padrao de qualquer
+  // componente seu que caia no modo escuro "de fabrica" (ex: q-page, q-dark
+  // em botoes/campos). Sem isso, esses componentes pintam um cinza neutro
+  // (#1d1d1d/#121212) por cima do nosso tema, dando a impressao de uma
+  // "camada cinza" sobre a tela ao trocar de tema. Aqui eles viram os mesmos
+  // tons de --superficie/--fundo, entao nunca destoam.
+  --q-dark: #221c1e;
+  --q-dark-page: #171314;
+
   --marca: #7c1a2c;
   --marca-clara: #99283f;
   --titulo: #f2dbe0;

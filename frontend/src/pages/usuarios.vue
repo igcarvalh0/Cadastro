@@ -1,5 +1,7 @@
 <template>
   <q-layout view="lHh Lpr lFf">
+    <MarcaDaguaFundo />
+
     <CabecalhoApp
       titulo="Usuários"
       :carregando="carregando"
@@ -328,6 +330,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 
 import CabecalhoApp from '../components/CabecalhoApp.vue'
+import MarcaDaguaFundo from '../components/MarcaDaguaFundo.vue'
 import { PODE_GERENCIAR_USUARIOS, useSessao } from '../composables/useSessao'
 
 definePage({ meta: { permissao: PODE_GERENCIAR_USUARIOS } })
