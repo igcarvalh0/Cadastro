@@ -192,6 +192,26 @@ body {
 }
 
 // ============================================================
+// LOGO POR TEMA
+// ============================================================
+
+// Duas versoes do logo: a do tema claro e a do tema escuro. A troca e feita
+// aqui, no CSS, e nao no JavaScript — assim a versao certa ja vem pintada no
+// primeiro quadro, sem o piscar de trocar a imagem depois que a tela aparece.
+//
+// Para trocar as artes, basta substituir os arquivos:
+//   frontend/public/icons/logo-claro.png   (usado no tema claro)
+//   frontend/public/icons/logo-escuro.png  (usado no tema noturno)
+.logo-tema .logo-escuro,
+body.body--dark .logo-tema .logo-claro {
+  display: none;
+}
+
+body.body--dark .logo-tema .logo-escuro {
+  display: block;
+}
+
+// ============================================================
 // TIPOGRAFIA
 // ============================================================
 
