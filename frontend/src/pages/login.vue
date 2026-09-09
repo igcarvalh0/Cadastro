@@ -151,7 +151,7 @@ onMounted(restaurarModoNoturno)
 
 .cartao-login {
   width: 100%;
-  max-width: 380px;
+  max-width: 399px; /* 380px + 5% */
   background: var(--superficie);
   box-shadow: var(--sombra);
 }
@@ -163,7 +163,7 @@ onMounted(restaurarModoNoturno)
 }
 
 .marca-login img {
-  width: 64px;
-  height: 64px;
+  width: 73.6px; /* 64px + 15% */
+  height: 70.4px; /* 64px + 10% */
 }
 </style>
