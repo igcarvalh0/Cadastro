@@ -1,5 +1,8 @@
 import io
+import os
+import secrets
 import unicodedata
+from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 from pathlib import Path
 
@@ -13,18 +16,39 @@ from flask import (
     send_file,
     send_from_directory,
 )
+from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import joinedload
 
+import auth
+from auth import exige_permissao
 from database.database import SessionLocal
 from database.models import (
     Colaborador,
     ComposicaoEquipe,
     Equipe,
     MembroEquipe,
+    Usuario,
 )
 
 app = Flask(__name__, static_folder=None, template_folder=None)
+
+# Assina o cookie de sessao. Sem um valor fixo no .env, todo reinicio do
+# servidor derruba quem estava logado — por isso o aviso em vez do silencio.
+SECRET_KEY = os.getenv("SECRET_KEY")
+if not SECRET_KEY:
+    SECRET_KEY = secrets.token_hex(32)
+    print(
+        "[AVISO] SECRET_KEY não está no .env: as sessões vão cair a cada "
+        "reinício do servidor."
+    )
+
+app.secret_key = SECRET_KEY
+app.permanent_session_lifetime = timedelta(hours=12)
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+)
 
 PROJECT_DIR = Path(__file__).resolve().parent
 FRONTEND_DIST_DIR = PROJECT_DIR / "frontend" / "dist" / "spa"
@@ -196,6 +220,111 @@ def base_da_secao(secao):
 
 
 # ============================================================
+# PORTEIRO DA API
+# ============================================================
+
+# Rotas de API que funcionam sem login. Todo o resto de /api exige sessao.
+# O SPA em si e servido sempre: e ele que mostra a tela de login.
+ROTAS_LIVRES = {
+    "entrar",
+    "sair",
+    "obter_sessao",
+    "status",
+}
+
+
+@app.before_request
+def exigir_sessao():
+    if not request.path.startswith("/api/"):
+        return None
+
+    if request.endpoint in ROTAS_LIVRES:
+        return None
+
+    if auth.usuario_logado():
+        return None
+
+    return jsonify({"erro": "Faça login para continuar."}), 401
+
+
+# ============================================================
+# API - SESSÃO
+# ============================================================
+
+@app.route("/api/login", methods=["POST"])
+def entrar():
+    dados = request.get_json(silent=True) or {}
+    nome_usuario = str(dados.get("usuario", "")).strip()
+    senha = str(dados.get("senha", ""))
+
+    if not nome_usuario or not senha:
+        return jsonify({"erro": "Informe usuário e senha."}), 400
+
+    session = SessionLocal()
+    try:
+        usuario = (
+            session.query(Usuario)
+            .filter(func.upper(Usuario.USUARIO) == nome_usuario.upper())
+            .first()
+        )
+
+        # mesma mensagem para usuario inexistente e senha errada, para nao
+        # entregar quais usuarios existem
+        if not usuario or not auth.senha_confere(usuario, senha):
+            return jsonify({"erro": "Usuário ou senha inválidos."}), 401
+
+        if not usuario.ATIVO:
+            return jsonify({"erro": "Este usuário está desativado."}), 403
+
+        usuario.ULTIMO_ACESSO = datetime.now(timezone.utc)
+        dados_usuario = auth.descrever_usuario(usuario)
+        session.commit()
+
+        auth.registrar_login(usuario)
+
+        return jsonify({"sucesso": True, "usuario": dados_usuario})
+    except Exception as erro:
+        session.rollback()
+        print(f"[ERRO] entrar: {erro}")
+        return jsonify({"erro": "Não foi possível entrar."}), 500
+    finally:
+        session.close()
+
+
+@app.route("/api/logout", methods=["POST"])
+def sair():
+    auth.encerrar_sessao()
+    return jsonify({"sucesso": True})
+
+
+@app.route("/api/sessao", methods=["GET"])
+def obter_sessao():
+    """Quem está logado. Responde 200 com autenticado=false quando ninguém
+    está, para a tela decidir se mostra o login sem tratar isso como erro."""
+    usuario = auth.usuario_logado()
+
+    return jsonify({
+        "autenticado": bool(usuario),
+        "usuario": usuario,
+        "niveis": niveis_para_tela(),
+        "tipos_vinculo": auth.TIPOS_VINCULO,
+    })
+
+
+def niveis_para_tela():
+    return [
+        {
+            "valor": nome,
+            "rotulo": dados["rotulo"],
+            "descricao": dados["descricao"],
+            "permissoes": sorted(dados["permissoes"]),
+            "ignora_vinculos": bool(dados.get("ignora_vinculos", False)),
+        }
+        for nome, dados in auth.NIVEIS.items()
+    ]
+
+
+# ============================================================
 # ROTAS DE PÁGINAS
 # ============================================================
 
@@ -214,6 +343,7 @@ def resumo():
 # ============================================================
 
 @app.route("/api/resumo", methods=["GET"])
+@exige_permissao(auth.VER_RESUMO)
 def obter_resumo():
     session = SessionLocal()
     try:
@@ -463,6 +593,7 @@ def obter_resumo():
 
 
 @app.route("/api/pessoas-nao-alocadas", methods=["GET"])
+@exige_permissao(auth.VER_RESUMO)
 def obter_pessoas_nao_alocadas():
     """Nomes de quem esta sem vaga, de uma funcao e das bases pedidas.
 
@@ -513,6 +644,7 @@ def obter_pessoas_nao_alocadas():
 # ============================================================
 
 @app.route("/api/equipes", methods=["GET"])
+@exige_permissao(auth.VER_EQUIPES)
 def obter_equipes():
     session = SessionLocal()
     try:
@@ -589,6 +721,7 @@ def obter_equipes():
 # ============================================================
 
 @app.route("/api/equipes", methods=["POST"])
+@exige_permissao(auth.GERENCIAR_VAGAS)
 def criar_equipe():
     dados = request.get_json()
     if not dados:
@@ -632,6 +765,7 @@ def criar_equipe():
 
 
 @app.route("/api/equipes/<int:equipe_id>", methods=["PUT"])
+@exige_permissao(auth.GERENCIAR_VAGAS)
 def atualizar_equipe(equipe_id):
     dados = request.get_json()
     if not dados:
@@ -683,6 +817,7 @@ def atualizar_equipe(equipe_id):
 
 
 @app.route("/api/membros", methods=["DELETE"])
+@exige_permissao(auth.ALOCAR)
 def remover_todas_alocacoes():
     """Libera todas as vagas do sistema de uma vez. As vagas continuam
     cadastradas: some so o vinculo com o colaborador."""
@@ -705,6 +840,7 @@ def remover_todas_alocacoes():
 
 
 @app.route("/api/equipes/<int:equipe_id>/membros", methods=["DELETE"])
+@exige_permissao(auth.ALOCAR)
 def remover_membros_equipe(equipe_id):
     session = SessionLocal()
     try:
@@ -737,6 +873,7 @@ def remover_membros_equipe(equipe_id):
 
 
 @app.route("/api/equipes/<int:equipe_id>", methods=["DELETE"])
+@exige_permissao(auth.GERENCIAR_VAGAS)
 def remover_equipe(equipe_id):
     session = SessionLocal()
     try:
@@ -1250,6 +1387,7 @@ def analisar_planilha_equipes(arquivo, session):
 
 
 @app.route("/api/equipes/planilha", methods=["GET"])
+@exige_permissao(auth.GERENCIAR_VAGAS)
 def baixar_planilha_equipes():
     session = SessionLocal()
     try:
@@ -1287,6 +1425,7 @@ def baixar_planilha_equipes():
 
 
 @app.route("/api/equipes/planilha/previa", methods=["POST"])
+@exige_permissao(auth.GERENCIAR_VAGAS)
 def prever_planilha_equipes():
     arquivo = request.files.get("arquivo")
     if not arquivo:
@@ -1305,6 +1444,7 @@ def prever_planilha_equipes():
 
 
 @app.route("/api/equipes/planilha/aplicar", methods=["POST"])
+@exige_permissao(auth.GERENCIAR_VAGAS)
 def aplicar_planilha_equipes():
     arquivo = request.files.get("arquivo")
     if not arquivo:
@@ -1424,6 +1564,7 @@ def aplicar_planilha_equipes():
 
 
 @app.route("/api/equipes/vagas", methods=["POST"])
+@exige_permissao(auth.GERENCIAR_VAGAS)
 def criar_vaga():
     dados = request.get_json()
     if not dados:
@@ -1480,6 +1621,7 @@ def criar_vaga():
 
 
 @app.route("/api/equipes/vagas/<int:vaga_id>", methods=["DELETE"])
+@exige_permissao(auth.GERENCIAR_VAGAS)
 def remover_vaga(vaga_id):
     session = SessionLocal()
     try:
@@ -1507,6 +1649,7 @@ def remover_vaga(vaga_id):
 # ============================================================
 
 @app.route("/api/opcoes-alocacao", methods=["GET"])
+@exige_permissao(auth.VER_EQUIPES)
 def obter_opcoes_alocacao():
     session = SessionLocal()
     try:
@@ -1568,6 +1711,7 @@ def obter_opcoes_alocacao():
 # ============================================================
 
 @app.route("/api/colaboradores", methods=["GET"])
+@exige_permissao(auth.VER_EQUIPES)
 def obter_colaboradores():
     session = SessionLocal()
     try:
@@ -1602,6 +1746,7 @@ def obter_colaboradores():
 # ============================================================
 
 @app.route("/api/equipes/alocar", methods=["POST"])
+@exige_permissao(auth.ALOCAR)
 def alocar_colaborador():
     dados = request.get_json()
     if not dados:
@@ -1674,6 +1819,7 @@ def alocar_colaborador():
 # ============================================================
 
 @app.route("/api/equipes/remover", methods=["POST"])
+@exige_permissao(auth.ALOCAR)
 def remover_colaborador():
     dados = request.get_json()
     if not dados:
@@ -1706,6 +1852,265 @@ def remover_colaborador():
         session.rollback()
         print(f"[ERRO] remover_colaborador: {erro}")
         return jsonify({"erro": "Não foi possível remover o colaborador."}), 500
+    finally:
+        session.close()
+
+
+# ============================================================
+# API - USUÁRIOS
+# ============================================================
+
+def carregar_usuario(session, usuario_id):
+    return (
+        session.query(Usuario)
+        .options(joinedload(Usuario.vinculos))
+        .filter(Usuario.id == usuario_id)
+        .first()
+    )
+
+
+def dados_do_formulario_usuario(dados):
+    """Le e valida os campos comuns a criar e editar."""
+    nome_usuario = str(dados.get("usuario", "")).strip()
+    nome = str(dados.get("nome", "")).strip()
+    nivel = str(dados.get("nivel", "")).strip().upper()
+
+    if not nome_usuario:
+        return None, "Informe o usuário."
+    if not nome:
+        return None, "Informe o nome."
+    if nivel not in auth.NIVEIS:
+        return None, "Nível de acesso inválido."
+
+    return {
+        "usuario": nome_usuario,
+        "nome": nome,
+        "nivel": nivel,
+        "ativo": bool(dados.get("ativo", True)),
+        "vinculos": dados.get("vinculos") or {},
+    }, None
+
+
+@app.route("/api/usuarios", methods=["GET"])
+@exige_permissao(auth.GERENCIAR_USUARIOS)
+def listar_usuarios():
+    session = SessionLocal()
+    try:
+        usuarios = (
+            session.query(Usuario)
+            .options(joinedload(Usuario.vinculos))
+            .order_by(Usuario.NOME)
+            .all()
+        )
+
+        return jsonify([auth.descrever_usuario(u) for u in usuarios])
+    except Exception as erro:
+        print(f"[ERRO] listar_usuarios: {erro}")
+        return jsonify({"erro": "Não foi possível carregar os usuários."}), 500
+    finally:
+        session.close()
+
+
+@app.route("/api/usuarios", methods=["POST"])
+@exige_permissao(auth.GERENCIAR_USUARIOS)
+def criar_usuario():
+    dados = request.get_json(silent=True) or {}
+    campos, problema = dados_do_formulario_usuario(dados)
+
+    if problema:
+        return jsonify({"erro": problema}), 400
+
+    senha = str(dados.get("senha", ""))
+    problema_senha = auth.validar_senha(senha)
+
+    if problema_senha:
+        return jsonify({"erro": problema_senha}), 400
+
+    session = SessionLocal()
+    try:
+        existente = (
+            session.query(Usuario)
+            .filter(func.upper(Usuario.USUARIO) == campos["usuario"].upper())
+            .first()
+        )
+        if existente:
+            return jsonify({"erro": "Já existe um usuário com esse login."}), 400
+
+        usuario = Usuario(
+            USUARIO=campos["usuario"],
+            NOME=campos["nome"],
+            NIVEL=campos["nivel"],
+            ATIVO=campos["ativo"],
+            SENHA_HASH=auth.gerar_hash_senha(senha),
+        )
+        session.add(usuario)
+        session.flush()
+
+        auth.substituir_vinculos(session, usuario, campos["vinculos"])
+        session.commit()
+
+        return jsonify({
+            "sucesso": True,
+            "usuario": auth.descrever_usuario(carregar_usuario(session, usuario.id)),
+        })
+    except IntegrityError:
+        session.rollback()
+        return jsonify({"erro": "Já existe um usuário com esse login."}), 400
+    except Exception as erro:
+        session.rollback()
+        print(f"[ERRO] criar_usuario: {erro}")
+        return jsonify({"erro": "Não foi possível criar o usuário."}), 500
+    finally:
+        session.close()
+
+
+@app.route("/api/usuarios/<int:usuario_id>", methods=["PUT"])
+@exige_permissao(auth.GERENCIAR_USUARIOS)
+def atualizar_usuario(usuario_id):
+    dados = request.get_json(silent=True) or {}
+    campos, problema = dados_do_formulario_usuario(dados)
+
+    if problema:
+        return jsonify({"erro": problema}), 400
+
+    # senha em branco significa "manter a atual"
+    senha = str(dados.get("senha", ""))
+    if senha:
+        problema_senha = auth.validar_senha(senha)
+        if problema_senha:
+            return jsonify({"erro": problema_senha}), 400
+
+    session = SessionLocal()
+    try:
+        usuario = carregar_usuario(session, usuario_id)
+        if not usuario:
+            return jsonify({"erro": "Usuário não encontrado."}), 404
+
+        duplicado = (
+            session.query(Usuario)
+            .filter(
+                func.upper(Usuario.USUARIO) == campos["usuario"].upper(),
+                Usuario.id != usuario_id,
+            )
+            .first()
+        )
+        if duplicado:
+            return jsonify({"erro": "Já existe um usuário com esse login."}), 400
+
+        eu = auth.usuario_logado()
+        virando_comum = campos["nivel"] != auth.NIVEL_MESTRE or not campos["ativo"]
+
+        # travas para nao sobrar zero mestre ativo — e para ninguem tirar o
+        # proprio acesso sem querer
+        if usuario.NIVEL == auth.NIVEL_MESTRE and virando_comum:
+            if usuario.id == eu["id"]:
+                return jsonify({
+                    "erro": "Você não pode remover o seu próprio acesso de mestre."
+                }), 400
+
+            if contar_mestres_ativos(session, ignorando=usuario_id) == 0:
+                return jsonify({
+                    "erro": "É preciso manter ao menos um mestre ativo."
+                }), 400
+
+        usuario.USUARIO = campos["usuario"]
+        usuario.NOME = campos["nome"]
+        usuario.NIVEL = campos["nivel"]
+        usuario.ATIVO = campos["ativo"]
+
+        if senha:
+            usuario.SENHA_HASH = auth.gerar_hash_senha(senha)
+
+        auth.substituir_vinculos(session, usuario, campos["vinculos"])
+        session.commit()
+
+        return jsonify({
+            "sucesso": True,
+            "usuario": auth.descrever_usuario(carregar_usuario(session, usuario_id)),
+        })
+    except IntegrityError:
+        session.rollback()
+        return jsonify({"erro": "Já existe um usuário com esse login."}), 400
+    except Exception as erro:
+        session.rollback()
+        print(f"[ERRO] atualizar_usuario: {erro}")
+        return jsonify({"erro": "Não foi possível atualizar o usuário."}), 500
+    finally:
+        session.close()
+
+
+def contar_mestres_ativos(session, ignorando=None):
+    consulta = session.query(Usuario).filter(
+        Usuario.NIVEL == auth.NIVEL_MESTRE,
+        Usuario.ATIVO.is_(True),
+    )
+
+    if ignorando is not None:
+        consulta = consulta.filter(Usuario.id != ignorando)
+
+    return consulta.count()
+
+
+@app.route("/api/usuarios/<int:usuario_id>", methods=["DELETE"])
+@exige_permissao(auth.GERENCIAR_USUARIOS)
+def remover_usuario(usuario_id):
+    session = SessionLocal()
+    try:
+        usuario = carregar_usuario(session, usuario_id)
+        if not usuario:
+            return jsonify({"erro": "Usuário não encontrado."}), 404
+
+        if usuario.id == auth.usuario_logado()["id"]:
+            return jsonify({"erro": "Você não pode excluir o seu próprio usuário."}), 400
+
+        if (
+            usuario.NIVEL == auth.NIVEL_MESTRE
+            and contar_mestres_ativos(session, ignorando=usuario_id) == 0
+        ):
+            return jsonify({"erro": "É preciso manter ao menos um mestre ativo."}), 400
+
+        session.delete(usuario)
+        session.commit()
+
+        return jsonify({"sucesso": True, "mensagem": "Usuário removido."})
+    except Exception as erro:
+        session.rollback()
+        print(f"[ERRO] remover_usuario: {erro}")
+        return jsonify({"erro": "Não foi possível remover o usuário."}), 500
+    finally:
+        session.close()
+
+
+@app.route("/api/minha-senha", methods=["PUT"])
+def trocar_propria_senha():
+    """Qualquer pessoa logada pode trocar a propria senha, informando a atual."""
+    dados = request.get_json(silent=True) or {}
+    senha_atual = str(dados.get("senha_atual", ""))
+    senha_nova = str(dados.get("senha_nova", ""))
+
+    problema = auth.validar_senha(senha_nova)
+    if problema:
+        return jsonify({"erro": problema}), 400
+
+    session = SessionLocal()
+    try:
+        usuario = (
+            session.query(Usuario)
+            .filter(Usuario.id == auth.usuario_logado()["id"])
+            .first()
+        )
+
+        if not usuario or not auth.senha_confere(usuario, senha_atual):
+            return jsonify({"erro": "Senha atual incorreta."}), 400
+
+        usuario.SENHA_HASH = auth.gerar_hash_senha(senha_nova)
+        session.commit()
+
+        return jsonify({"sucesso": True, "mensagem": "Senha alterada."})
+    except Exception as erro:
+        session.rollback()
+        print(f"[ERRO] trocar_propria_senha: {erro}")
+        return jsonify({"erro": "Não foi possível alterar a senha."}), 500
     finally:
         session.close()
 

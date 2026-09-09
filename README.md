@@ -19,6 +19,7 @@ pip install -r requirements.txt
    - `001_add_unique_team.sql` — impede duas equipes com a mesma BASE + PREFIXO.
    - `002_add_unique_membro_chapa.sql` — impede o mesmo colaborador em duas vagas.
    - `003_add_setor_supervisor_coordenador.sql` — SETOR, SUPERVISOR e COORDENADOR por vaga.
+   - `004_add_usuarios.sql` — usuarios do sistema e os vinculos de cada um.
 
    Cada arquivo traz no cabecalho o que conferir antes de rodar.
 
@@ -50,8 +51,32 @@ A aplicacao sera servida em `http://127.0.0.1:5000`.
 Os testes nao tocam o banco: as regras de planilha sao exercitadas com objetos
 de mentira, entao podem rodar com o `.env` apontando para producao.
 
+## Acesso
+
+Toda a API exige login. Para criar o primeiro usuario (ou recuperar o acesso,
+se ninguem mais conseguir entrar):
+
+```powershell
+.\.venv\Scripts\python.exe -m database.criar_usuario_mestre
+```
+
+A senha e pedida sem aparecer na tela e vai para o banco apenas como hash
+(scrypt) — nunca em texto puro.
+
+### Niveis e vinculos
+
+- O **nivel** diz o que a pessoa pode fazer. Definido em `auth.py`, em `NIVEIS`:
+  e o unico lugar a mexer para criar ou alterar um nivel. A tela de usuarios le
+  essa tabela, entao um nivel novo aparece no formulario sozinho.
+- Os **vinculos** dizem sobre quais equipes ela age (base, setor, supervisor,
+  coordenador). Sem nenhum vinculo, a pessoa alcanca todas as equipes.
+- `MESTRE` tem todas as permissoes e ignora vinculos.
+
+`SECRET_KEY` no `.env` assina o cookie de sessao. Trocar esse valor desloga
+todo mundo; nao ter o valor faz as sessoes cairem a cada reinicio do servidor.
+
 ## Atencao
 
-A aplicacao **nao tem autenticacao**. Enquanto isso nao existir, mantenha o
-servidor em `127.0.0.1` — expor a porta na rede da empresa deixa qualquer pessoa
-ver e editar as equipes.
+Mesmo com login, mantenha o servidor em `127.0.0.1` enquanto o controle de
+acesso nao estiver validado em uso. O trafego e HTTP puro: numa rede aberta,
+usuario e senha viajam sem criptografia.

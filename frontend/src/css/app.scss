@@ -70,7 +70,9 @@
   // disciplinas com cor propria: construcao usa a cor da marca e folguista o
   // laranja, por serem os dois conceitos fixos do sistema
   --tipo-construcao: #711424;
-  --tipo-folguista: #c9741b;
+  // laranja um pouco mais escuro que o --folguista das outras areas: aqui ele
+  // e fundo de chip com texto branco, e o tom claro so dava 3,5:1
+  --tipo-folguista: #ad6417;
 
   // paleta para as demais disciplinas. a atribuicao e estavel por nome, entao
   // uma disciplina nova entra com cor propria sem precisar mexer no codigo

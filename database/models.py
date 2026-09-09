@@ -1,4 +1,14 @@
-from sqlalchemy import Column, Integer, String, Date, ForeignKey, UniqueConstraint
+from sqlalchemy import (
+    Boolean,
+    Column,
+    Date,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.orm import relationship
 
 from database.base import Base
@@ -132,3 +142,62 @@ class MembroEquipe(Base):
     colaborador = relationship(
         "Colaborador"
     )
+
+
+class Usuario(Base):
+    """Quem entra no sistema.
+
+    A senha nunca e guardada: fica so o hash gerado pelo werkzeug. NIVEL define
+    o que a pessoa pode fazer (ver app.py, NIVEIS); os vinculos definem sobre
+    quais equipes ela pode fazer.
+    """
+
+    __tablename__ = "usuarios"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    USUARIO = Column(String, unique=True, nullable=False, index=True)
+    NOME = Column(String, nullable=False)
+    SENHA_HASH = Column(String, nullable=False)
+    NIVEL = Column(String, nullable=False)
+    ATIVO = Column(Boolean, nullable=False, default=True)
+
+    CRIADO_EM = Column(DateTime(timezone=True), server_default=func.now())
+    ULTIMO_ACESSO = Column(DateTime(timezone=True), nullable=True)
+
+    vinculos = relationship(
+        "VinculoUsuario",
+        back_populates="usuario",
+        cascade="all, delete-orphan"
+    )
+
+
+class VinculoUsuario(Base):
+    """Recorte de dados que um usuario enxerga.
+
+    Guardado como pares TIPO/VALOR (BASE=BACABAL, SETOR=Setor Leste,
+    SUPERVISOR=Joao...) em vez de colunas fixas, porque um usuario pode ter
+    varios vinculos do mesmo tipo e porque os valores sao texto livre,
+    cadastrados junto com as vagas.
+    """
+
+    __tablename__ = "usuarios_vinculos"
+    __table_args__ = (
+        UniqueConstraint(
+            "usuario_id", "TIPO", "VALOR", name="uq_vinculo_usuario_tipo_valor"
+        ),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    usuario_id = Column(
+        Integer,
+        ForeignKey("usuarios.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True
+    )
+
+    TIPO = Column(String, nullable=False)
+    VALOR = Column(String, nullable=False)
+
+    usuario = relationship("Usuario", back_populates="vinculos")

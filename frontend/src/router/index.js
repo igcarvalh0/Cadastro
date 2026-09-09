@@ -7,6 +7,10 @@ import {
   createWebHistory
 } from 'vue-router'
 
+import { useSessao } from '../composables/useSessao'
+
+export const ROTA_LOGIN = '/login'
+
 /*
  * If not building with SSR mode, you can
  * directly export the Router instantiation;
@@ -37,6 +41,30 @@ export default defineRouter((/* { store, ssrContext } */) => {
   if (import.meta.hot) {
     handleHotUpdate(Router)
   }
+
+  // Sem sessão, só a tela de login abre. Com sessão, /login redireciona para
+  // o início — não faz sentido ver o formulário já logado.
+  Router.beforeEach(async destino => {
+    const { garantirSessao, temPermissao } = useSessao()
+    const usuario = await garantirSessao()
+
+    if (destino.path === ROTA_LOGIN) {
+      return usuario ? { path: '/' } : true
+    }
+
+    if (!usuario) {
+      // guarda o destino para voltar até ele depois de entrar
+      return { path: ROTA_LOGIN, query: { destino: destino.fullPath } }
+    }
+
+    const exigida = destino.meta?.permissao
+
+    if (exigida && !temPermissao(exigida)) {
+      return { path: '/' }
+    }
+
+    return true
+  })
 
   return Router
 })
