@@ -37,9 +37,10 @@
 
             <div class="text-caption text-grey-7">
               O nível define <strong>o que</strong> a pessoa pode fazer. Os
-              vínculos definem <strong>sobre quais equipes</strong>. Marque ou
-              desmarque as permissões de Supervisor e Analista e clique em
-              Salvar na linha — o Administrador sempre tem acesso total.
+              vínculos (ou, para Gerente e Coordenador, a hierarquia de
+              responsáveis) definem <strong>sobre quais equipes</strong>.
+              Marque ou desmarque as permissões e clique em Salvar na linha —
+              o Administrador sempre tem acesso total.
             </div>
           </q-card-section>
 
@@ -262,6 +263,9 @@
 
                 <q-item-label caption>
                   {{ pessoa.usuario }} · {{ pessoa.nivel_rotulo }}
+                  <template v-if="pessoa.responsavel_nome">
+                    · responde a {{ pessoa.responsavel_nome }}
+                  </template>
                 </q-item-label>
 
                 <q-item-label v-if="resumoVinculos(pessoa)" caption class="q-mt-xs">
@@ -371,6 +375,19 @@
                 map-options
                 label="Nível de acesso"
                 :options="opcoesNiveis"
+              />
+
+              <q-select
+                v-if="nivelDoResponsavel"
+                v-model="formulario.responsavel_id"
+                outlined
+                dense
+                clearable
+                emit-value
+                map-options
+                label="Responde a (responsável direto)"
+                :hint="`Escolha um usuário do nível ${rotuloDoNivel(nivelDoResponsavel)}`"
+                :options="opcoesResponsaveis"
               />
 
               <q-toggle
@@ -564,7 +581,8 @@ const formulario = reactive({
   senha: '',
   nivel: '',
   ativo: true,
-  vinculos: {}
+  vinculos: {},
+  responsavel_id: null
 })
 
 const opcoesNiveis = computed(() =>
@@ -576,6 +594,29 @@ const nivelIgnoraVinculos = computed(
     niveis.value.find(nivel => nivel.valor === formulario.nivel)
       ?.ignora_vinculos ?? false
 )
+
+// Gerente/Coordenador nao tem vinculo proprio: o escopo dele vem dos
+// Supervisores (ou Coordenadores) que respondem a ele — ver auth.escopo_efetivo.
+// Este campo diz de QUE NIVEL e o responsavel de quem esta sendo editado.
+const nivelDoResponsavel = computed(
+  () =>
+    niveis.value.find(nivel => nivel.valor === formulario.nivel)
+      ?.nivel_do_responsavel || null
+)
+
+const opcoesResponsaveis = computed(() => {
+  if (!nivelDoResponsavel.value) {
+    return []
+  }
+
+  return usuarios.value
+    .filter(
+      pessoa =>
+        pessoa.nivel === nivelDoResponsavel.value && pessoa.id !== formulario.id
+    )
+    .map(pessoa => ({ label: pessoa.nome, value: pessoa.id }))
+    .sort((a, b) => a.label.localeCompare(b.label, 'pt-BR'))
+})
 
 // Sugestões vindas do que já está cadastrado nas vagas, para não digitar
 // setor e supervisor de novo — mas o campo aceita texto novo também.
@@ -678,6 +719,7 @@ function preencher(pessoa) {
   formulario.senha = ''
   formulario.nivel = pessoa?.nivel || niveis.value[0]?.valor || ''
   formulario.ativo = pessoa ? pessoa.ativo : true
+  formulario.responsavel_id = pessoa?.responsavel_id ?? null
   formulario.vinculos = Object.fromEntries(
     Object.keys(tiposVinculo.value).map(tipo => [
       tipo,
@@ -710,7 +752,8 @@ async function salvar() {
       nome: formulario.nome.trim(),
       nivel: formulario.nivel,
       ativo: formulario.ativo,
-      vinculos: nivelIgnoraVinculos.value ? {} : formulario.vinculos
+      vinculos: nivelIgnoraVinculos.value ? {} : formulario.vinculos,
+      responsavel_id: nivelDoResponsavel.value ? formulario.responsavel_id : null
     }
 
     if (formulario.senha) {
@@ -851,6 +894,12 @@ watch(nivelIgnoraVinculos, ignora => {
     for (const tipo of Object.keys(formulario.vinculos)) {
       formulario.vinculos[tipo] = []
     }
+  }
+})
+
+watch(nivelDoResponsavel, permitido => {
+  if (!permitido) {
+    formulario.responsavel_id = null
   }
 })
 

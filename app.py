@@ -333,6 +333,7 @@ def niveis_para_tela(session=None):
             "permissoes": sorted(auth.permissoes_do_nivel(nome, session)),
             "ignora_vinculos": bool(dados.get("ignora_vinculos", False)),
             "personalizavel": nome not in auth.NIVEIS_PERMISSOES_FIXAS,
+            "nivel_do_responsavel": auth.NIVEL_DO_RESPONSAVEL.get(nome),
         }
         for nome, dados in auth.NIVEIS.items()
     ]
@@ -389,6 +390,8 @@ def resumo():
 def obter_resumo():
     session = SessionLocal()
     try:
+        usuario = auth.usuario_logado()
+
         filtro_base = request.args.get("base", "").strip()
         filtro_tipo = request.args.get("tipo", "").strip()
         filtro_setor = request.args.get("setor", "").strip()
@@ -409,6 +412,11 @@ def obter_resumo():
         tipos_existentes = set()
 
         for equipe in equipes:
+            if not auth.equipe_visivel(
+                usuario, equipe.BASE, tipos_e_setores_da_equipe(equipe), equipe_id=equipe.id,
+            ):
+                continue
+
             base = str(equipe.BASE).strip() if equipe.BASE is not None else ""
             if not base:
                 continue
@@ -486,22 +494,26 @@ def obter_resumo():
                     if vaga_extra:
                         registro["extra"] += 1
 
-                    funcao_colab = padronizar_funcao(colaborador.FUNÇÃO)
-                    if funcao_colab in ORDEM_FUNCOES:
-                        pessoas_disponiveis[codigo_base]["funcoes"][funcao_colab] = (
-                            pessoas_disponiveis[codigo_base]["funcoes"].get(funcao_colab, 0) + 1
-                        )
-                        pessoas_disponiveis[codigo_base]["detalhes"].setdefault(funcao_colab, []).append({
-                            "base": base,
-                            "codigo_base": codigo_base,
-                            "equipe": prefixo,
-                            "tipo": tipo,
-                            "chapa": str(colaborador.CHAPA).strip(),
-                            "nome": str(colaborador.NOME).strip(),
-                            "funcao": funcao_colab,
-                            "funcao_sistema": str(colaborador.FUNÇÃO).strip() if colaborador.FUNÇÃO else "",
-                            "vaga": str(composicao.FUNÇÃO_ER).strip() if composicao.FUNÇÃO_ER else "",
-                        })
+                    # Indexado pela funcao da VAGA (funcao_exibicao), a mesma chave
+                    # usada para contar "alocados" acima. Antes isso era indexado pela
+                    # funcao cadastrada no colaborador (Colaborador.FUNÇÃO), que pode
+                    # divergir da funcao da vaga que ele ocupa — a lista de detalhes
+                    # ficava vazia mesmo com "alocados" > 0 quando as duas nao batiam
+                    # (ou quando a funcao do colaborador caia fora de ORDEM_FUNCOES).
+                    pessoas_disponiveis[codigo_base]["funcoes"][funcao_exibicao] = (
+                        pessoas_disponiveis[codigo_base]["funcoes"].get(funcao_exibicao, 0) + 1
+                    )
+                    pessoas_disponiveis[codigo_base]["detalhes"].setdefault(funcao_exibicao, []).append({
+                        "base": base,
+                        "codigo_base": codigo_base,
+                        "equipe": prefixo,
+                        "tipo": tipo,
+                        "chapa": str(colaborador.CHAPA).strip(),
+                        "nome": str(colaborador.NOME).strip(),
+                        "funcao": funcao_exibicao,
+                        "funcao_sistema": str(colaborador.FUNÇÃO).strip() if colaborador.FUNÇÃO else "",
+                        "vaga": str(composicao.FUNÇÃO_ER).strip() if composicao.FUNÇÃO_ER else "",
+                    })
 
         resultado = []
         for base, dados_base in resumo_bases.items():
@@ -709,6 +721,8 @@ def obter_pessoas_nao_alocadas():
 def obter_equipes():
     session = SessionLocal()
     try:
+        usuario = auth.usuario_logado()
+
         equipes = (
             session.query(Equipe)
             .options(
@@ -722,6 +736,10 @@ def obter_equipes():
 
         resultado = []
         for equipe in equipes:
+            if not auth.equipe_visivel(
+                usuario, equipe.BASE, tipos_e_setores_da_equipe(equipe), equipe_id=equipe.id,
+            ):
+                continue
             composicoes = sorted(
                 equipe.composicoes,
                 key=lambda item: (ordem_funcao(item.FUNÇÃO_ER), item.id),
@@ -947,6 +965,160 @@ def atualizar_equipe(equipe_id):
         session.close()
 
 
+@app.route("/api/equipes/edicao-massa", methods=["POST"])
+@exige_permissao(auth.GERENCIAR_VAGAS)
+def editar_equipes_em_massa():
+    """Edita varias equipes existentes de uma vez, sem passar por planilha.
+
+    Reaproveita o MESMO motor de diff da planilha de equipes
+    (analisar_planilha_equipes + aplicar_mudancas_equipe): monta uma
+    "planilha virtual" em memoria com uma linha por (equipe, tipo) de todas
+    as equipes enviadas, e deixa o motor calcular o que precisa mudar —
+    exatamente o que atualizar_equipe ja faz para uma equipe soh, aqui
+    estendido para varias na mesma chamada/transacao.
+    """
+    dados = request.get_json()
+    itens = (dados or {}).get("equipes") or []
+    if not itens:
+        return jsonify({"erro": "Nenhuma equipe informada."}), 400
+
+    session = SessionLocal()
+    try:
+        equipes_ids = [item.get("equipe_id") for item in itens if item.get("equipe_id")]
+        equipes_por_id = {
+            equipe.id: equipe
+            for equipe in session.query(Equipe)
+            .options(joinedload(Equipe.composicoes).joinedload(ComposicaoEquipe.membro))
+            .filter(Equipe.id.in_(equipes_ids))
+            .all()
+        }
+
+        erros_previos = []
+        linhas = []
+        funcoes = set()
+
+        for item in itens:
+            equipe_id = item.get("equipe_id")
+            equipe = equipes_por_id.get(equipe_id)
+            rotulo_item = f"{item.get('prefixo', '')} / {item.get('base', '')}".strip(" /")
+
+            if not equipe:
+                erros_previos.append({
+                    "linha": None,
+                    "equipe": rotulo_item or f"equipe #{equipe_id}",
+                    "erro": "Equipe não encontrada.",
+                })
+                continue
+
+            base = str(item.get("base", "")).strip().upper()
+            prefixo = str(item.get("prefixo", "")).strip()
+            if not base or not prefixo:
+                erros_previos.append({
+                    "linha": None,
+                    "equipe": rotulo_item or equipe.PREFIXO,
+                    "erro": "Base e prefixo são obrigatórios.",
+                })
+                continue
+
+            # libera as vagas confirmadas ANTES de montar a planilha virtual,
+            # igual ao fluxo de edicao individual (atualizar_equipe) — assim o
+            # motor de diff nunca precisa apagar uma vaga ocupada sem
+            # confirmacao explicita do usuario.
+            confirmar_remocoes = item.get("confirmar_remocoes") or []
+            if confirmar_remocoes:
+                for composicao_id in confirmar_remocoes:
+                    composicao = next(
+                        (c for c in equipe.composicoes if c.id == composicao_id), None
+                    )
+                    if composicao and composicao.membro:
+                        session.delete(composicao.membro)
+                session.flush()
+                session.refresh(equipe)
+
+            setor = str(item.get("setor", "")).strip()
+            supervisor = str(item.get("supervisor", "")).strip()
+            coordenador = str(item.get("coordenador", "")).strip()
+
+            por_tipo = {}
+            for vaga in item.get("vagas") or []:
+                tipo = str(vaga.get("tipo", "")).strip().upper() or TIPO_EQUIPE_PADRAO
+                funcao = str(vaga.get("funcao", "")).strip()
+                quantidade = int(vaga.get("quantidade") or 0)
+                if not funcao or quantidade < 0:
+                    continue
+                por_tipo.setdefault(tipo, {})[funcao] = quantidade
+                funcoes.add(funcao)
+
+            if not por_tipo:
+                erros_previos.append({
+                    "linha": None,
+                    "equipe": rotulo_item or equipe.PREFIXO,
+                    "erro": "Informe ao menos uma vaga.",
+                })
+                continue
+
+            equipe.BASE = base
+            equipe.PREFIXO = prefixo
+
+            for tipo, vagas_tipo in por_tipo.items():
+                linha = {
+                    "BASE": base,
+                    "PREFIXO": prefixo,
+                    COLUNA_TIPO_EQUIPE: tipo,
+                    COLUNA_SETOR: setor,
+                    COLUNA_SUPERVISOR: supervisor,
+                    COLUNA_COORDENADOR: coordenador,
+                    "AÇÃO": "editar",
+                }
+                for funcao, quantidade in vagas_tipo.items():
+                    linha[funcao] = quantidade
+                linhas.append(linha)
+
+        if erros_previos:
+            return jsonify({
+                "erro": "Corrija os problemas antes de aplicar.",
+                "erros": erros_previos,
+            }), 400
+
+        if not linhas:
+            return jsonify({"erro": "Nenhuma alteração válida foi enviada."}), 400
+
+        funcoes_ordenadas = sorted(funcoes, key=lambda f: (ordem_funcao(f), f))
+        df = pd.DataFrame(linhas, columns=list(COLUNAS_FIXAS_PLANILHA) + funcoes_ordenadas)
+        for funcao in funcoes_ordenadas:
+            df[funcao] = df[funcao].fillna(0)
+
+        buffer = io.BytesIO()
+        df.to_excel(buffer, index=False)
+        buffer.seek(0)
+
+        plano = analisar_planilha_equipes(buffer, session)
+        if plano["erros"]:
+            return jsonify({
+                "erro": "Não foi possível aplicar as mudanças.",
+                "erros": plano["erros"],
+            }), 400
+
+        for item_plano in plano["editar"]:
+            aplicar_mudancas_equipe(session, item_plano["equipe_id"], item_plano["mudancas"])
+
+        session.commit()
+
+        return jsonify({
+            "sucesso": True,
+            "equipes_editadas": len(plano["editar"]),
+        })
+    except IntegrityError:
+        session.rollback()
+        return jsonify({"erro": "Já existe uma equipe com essa base e prefixo."}), 400
+    except Exception as erro:
+        session.rollback()
+        print(f"[ERRO] editar_equipes_em_massa: {erro}")
+        return jsonify({"erro": "Não foi possível aplicar as edições em massa."}), 500
+    finally:
+        session.close()
+
+
 @app.route("/api/membros", methods=["DELETE"])
 @exige_permissao(auth.ALOCAR)
 def remover_todas_alocacoes():
@@ -1102,6 +1274,18 @@ def tipos_da_equipe(equipe):
     return sorted(tipos) if tipos else [TIPO_EQUIPE_PADRAO]
 
 
+def tipos_e_setores_da_equipe(equipe):
+    """Pares (tipo, setor) de cada vaga, para auth.equipe_visivel: o SETOR e
+    por vaga, entao nao da pra checar so com a lista de tipos_da_equipe."""
+    composicoes = equipe.composicoes or []
+    if not composicoes:
+        return [(TIPO_EQUIPE_PADRAO, None)]
+    return [
+        (tipo_equipe_da_vaga(c), (c.SETOR or "").strip() or None)
+        for c in composicoes
+    ]
+
+
 def setores_da_equipe(equipe):
     """Setores presentes nas vagas. Como o setor e por disciplina, uma equipe
     com vagas de construcao e de poda pode responder a dois setores."""
@@ -1188,6 +1372,16 @@ def texto_da_celula(valor):
 def texto_ou_none(valor):
     texto = texto_da_celula(valor)
     return texto or None
+
+
+def chapa_da_celula(valor):
+    """Igual a texto_da_celula, mas tira o ".0" que o Excel/pandas acrescenta
+    quando a coluna e lida como numero em vez de texto (mesma regra usada em
+    normalizar_linha_colaborador, database/importacao/importar_colaboradores.py)."""
+    chapa = texto_da_celula(valor)
+    if chapa.endswith(".0"):
+        chapa = chapa[:-2]
+    return chapa
 
 
 def aplicar_mudancas_equipe(session, equipe_id, mudancas):
@@ -1832,7 +2026,6 @@ def remover_vaga(vaga_id):
 
 COLUNA_ALOC_COMPOSICAO_ID = "COMPOSICAO_ID"
 COLUNA_ALOC_CHAPA = "CHAPA"
-COLUNA_ALOC_ACAO = "AÇÃO"
 COLUNAS_FIXAS_PLANILHA_ALOCACOES = (
     COLUNA_ALOC_COMPOSICAO_ID,
     "BASE",
@@ -1840,12 +2033,18 @@ COLUNAS_FIXAS_PLANILHA_ALOCACOES = (
     "TIPO EQUIPE",
     "FUNÇÃO",
     "SETOR",
-    "CHAPA_ATUAL",
     "NOME_ATUAL",
     COLUNA_ALOC_CHAPA,
-    COLUNA_ALOC_ACAO,
 )
-ACOES_PLANILHA_ALOCACOES = ("alocar", "remover", "editar")
+
+COLUNAS_PLANILHA_ATIVOS = (
+    "CHAPA",
+    "NOME",
+    "FUNÇÃO",
+    "SEÇÃO",
+    "SITUAÇÃO",
+    "ADMISSÃO",
+)
 
 OPERACAO_POR_ACAO_ALOCACAO = {
     "alocar": auth.OPERACAO_ALOCAR,
@@ -1854,9 +2053,20 @@ OPERACAO_POR_ACAO_ALOCACAO = {
 }
 
 
-def montar_planilha_alocacoes(session):
+def montar_planilha_alocacoes(session, usuario=None):
     """1 linha por vaga (ComposicaoEquipe), com quem ocupa hoje (se alguem) e
-    colunas CHAPA/AÇÃO para o usuario preencher o que quer mudar."""
+    a coluna CHAPA para o usuario preencher quem deve ocupar a vaga (em
+    branco = vaga deve ficar livre).
+
+    Nao ha coluna de AÇÃO nem uma segunda coluna de CHAPA "atual": a propria
+    diferenca entre o que esta no banco (recalculado no momento da analise,
+    nao o que foi exportado) e o que veio na planilha decide o que fazer —
+    ver analisar_planilha_alocacoes.
+
+    So traz as equipes dentro do escopo do usuario (ver auth.equipe_visivel)
+    — um Supervisor/Coordenador/Gerente nao baixa vagas fora do que ele
+    enxerga nas telas.
+    """
     equipes = (
         session.query(Equipe)
         .options(
@@ -1870,6 +2080,10 @@ def montar_planilha_alocacoes(session):
 
     linhas = []
     for equipe in equipes:
+        if usuario and not auth.equipe_visivel(
+                usuario, equipe.BASE, tipos_e_setores_da_equipe(equipe), equipe_id=equipe.id,
+            ):
+            continue
         for composicao in sorted(equipe.composicoes or [], key=lambda c: c.id):
             colaborador = composicao.membro.colaborador if composicao.membro else None
             linhas.append({
@@ -1879,29 +2093,69 @@ def montar_planilha_alocacoes(session):
                 "TIPO EQUIPE": tipo_equipe_da_vaga(composicao),
                 "FUNÇÃO": composicao.FUNÇÃO_ER,
                 "SETOR": composicao.SETOR or "",
-                "CHAPA_ATUAL": colaborador.CHAPA if colaborador else "",
                 "NOME_ATUAL": colaborador.NOME if colaborador else "",
                 COLUNA_ALOC_CHAPA: colaborador.CHAPA if colaborador else "",
-                COLUNA_ALOC_ACAO: "",
             })
 
     return pd.DataFrame(linhas, columns=list(COLUNAS_FIXAS_PLANILHA_ALOCACOES))
 
 
+def montar_planilha_ativos(session):
+    """Aba de consulta com todos os colaboradores ativos cadastrados —
+    facilita preencher a coluna CHAPA da aba Alocações, mas nao e lida pela
+    analise (a aba de alocacoes sozinha e quem manda)."""
+    colaboradores = (
+        session.query(Colaborador)
+        .filter(func.upper(func.trim(Colaborador.SITUAÇÃO)) == "ATIVO")
+        .order_by(Colaborador.NOME)
+        .all()
+    )
+
+    linhas = [
+        {
+            "CHAPA": colaborador.CHAPA,
+            "NOME": colaborador.NOME,
+            "FUNÇÃO": colaborador.FUNÇÃO or "",
+            "SEÇÃO": colaborador.SEÇÃO or "",
+            "SITUAÇÃO": colaborador.SITUAÇÃO or "",
+            "ADMISSÃO": colaborador.ADMISSÃO,
+        }
+        for colaborador in colaboradores
+    ]
+
+    return pd.DataFrame(linhas, columns=list(COLUNAS_PLANILHA_ATIVOS))
+
+
 def analisar_planilha_alocacoes(arquivo, session):
-    """Le a planilha de alocacoes e devolve o plano, sem gravar nada.
+    """Le a aba "Alocações" da planilha e devolve o plano, sem gravar nada.
 
     Cada linha vale por si (nao ha agrupamento por equipe, ao contrario da
-    planilha de vagas): a unidade e a vaga (COMPOSICAO_ID).
+    planilha de vagas): a unidade e a vaga (COMPOSICAO_ID), que e uma chave
+    estavel — a comparacao nunca depende da posicao fisica da linha.
+
+    A acao (alocar/remover/editar) nao vem de uma coluna: e deduzida
+    comparando a CHAPA da planilha com quem ocupa a vaga NO BANCO agora
+    (nao com o que foi exportado antes, que pode estar desatualizado):
+      - CHAPA em branco e vaga ocupada -> remover
+      - CHAPA preenchida e vaga livre -> alocar
+      - CHAPA preenchida e diferente de quem ja ocupa -> editar (troca)
+      - CHAPA igual a quem ja ocupa (ou ambas em branco) -> sem mudanca
     """
     try:
-        df = pd.read_excel(arquivo)
-    except Exception as erro:
-        raise ValueError(f"Não foi possível ler a planilha: {erro}")
+        df = pd.read_excel(arquivo, sheet_name="Alocações")
+    except Exception:
+        try:
+            arquivo.seek(0)
+        except Exception:
+            pass
+        try:
+            df = pd.read_excel(arquivo)
+        except Exception as erro:
+            raise ValueError(f"Não foi possível ler a planilha: {erro}")
 
     colunas = {str(c).strip(): c for c in df.columns}
     faltando = [
-        c for c in (COLUNA_ALOC_COMPOSICAO_ID, COLUNA_ALOC_ACAO) if c not in colunas
+        c for c in (COLUNA_ALOC_COMPOSICAO_ID, COLUNA_ALOC_CHAPA) if c not in colunas
     ]
     if faltando:
         raise ValueError(f"A planilha precisa das colunas {', '.join(faltando)}.")
@@ -1918,13 +2172,9 @@ def analisar_planilha_alocacoes(arquivo, session):
         numero = int(indice) + 2
 
         composicao_id_bruto = linha[colunas[COLUNA_ALOC_COMPOSICAO_ID]]
-        acao = texto_da_celula(linha[colunas[COLUNA_ALOC_ACAO]]).lower()
-        chapa = (
-            texto_da_celula(linha[colunas[COLUNA_ALOC_CHAPA]])
-            if COLUNA_ALOC_CHAPA in colunas else ""
-        )
+        chapa_planilha = chapa_da_celula(linha[colunas[COLUNA_ALOC_CHAPA]])
 
-        if pd.isna(composicao_id_bruto) and not acao:
+        if pd.isna(composicao_id_bruto):
             continue
 
         try:
@@ -1934,14 +2184,6 @@ def analisar_planilha_alocacoes(arquivo, session):
             continue
 
         rotulo = f"vaga #{composicao_id}"
-
-        if not acao:
-            plano["ignoradas"] += 1
-            continue
-
-        if acao not in ACOES_PLANILHA_ALOCACOES:
-            registrar_erro(numero, rotulo, f"Ação '{acao}' não existe. Use alocar, editar ou remover.")
-            continue
 
         composicao = (
             session.query(ComposicaoEquipe)
@@ -1960,6 +2202,14 @@ def analisar_planilha_alocacoes(arquivo, session):
         tipo = tipo_equipe_da_vaga(composicao)
         rotulo = f"{equipe.PREFIXO if equipe else '?'} / {composicao.FUNÇÃO_ER}"
 
+        chapa_atual = str(composicao.membro.CHAPA).strip() if composicao.membro else ""
+
+        if chapa_planilha == chapa_atual:
+            plano["ignoradas"] += 1
+            continue
+
+        acao = "remover" if not chapa_planilha else ("editar" if chapa_atual else "alocar")
+
         if not auth.pode_realizar_operacao(
             usuario,
             OPERACAO_POR_ACAO_ALOCACAO[acao],
@@ -1972,60 +2222,41 @@ def analisar_planilha_alocacoes(arquivo, session):
             continue
 
         if acao == "remover":
-            if not composicao.membro:
-                registrar_erro(numero, rotulo, "Esta vaga já está livre.")
-                continue
             plano["remover"].append({
                 "linha": numero,
                 "equipe": rotulo,
                 "composicao_id": composicao.id,
-                "chapa": composicao.membro.CHAPA,
+                "chapa": chapa_atual,
             })
             continue
 
         # acao in ("alocar", "editar")
-        if not chapa:
-            registrar_erro(numero, rotulo, f"CHAPA não informada para {acao}.")
-            continue
-        if composicao.membro and str(composicao.membro.CHAPA).strip() == chapa:
-            plano["ignoradas"] += 1
-            continue
-        if composicao.membro and acao == "alocar":
-            registrar_erro(
-                numero, rotulo,
-                "Esta vaga já está ocupada por outro colaborador. Use a ação 'editar' para trocar."
-            )
-            continue
-        if not composicao.membro and acao == "editar":
-            registrar_erro(numero, rotulo, "Esta vaga está livre. Use a ação 'alocar'.")
-            continue
-
         colaborador = (
-            session.query(Colaborador).filter(Colaborador.CHAPA == chapa).first()
+            session.query(Colaborador).filter(Colaborador.CHAPA == chapa_planilha).first()
         )
         if not colaborador:
-            registrar_erro(numero, rotulo, f"Colaborador de CHAPA {chapa} não encontrado.")
+            registrar_erro(numero, rotulo, f"Colaborador de CHAPA {chapa_planilha} não encontrado.")
             continue
 
-        if chapa in chapas_ja_planejadas:
-            registrar_erro(numero, rotulo, f"A CHAPA {chapa} já aparece em outra linha de alocação.")
+        if chapa_planilha in chapas_ja_planejadas:
+            registrar_erro(numero, rotulo, f"A CHAPA {chapa_planilha} já aparece em outra linha de alocação.")
             continue
-        chapas_ja_planejadas.add(chapa)
+        chapas_ja_planejadas.add(chapa_planilha)
 
         alocacao_existente = (
             session.query(MembroEquipe)
             .options(joinedload(MembroEquipe.composicao).joinedload(ComposicaoEquipe.equipe))
-            .filter(MembroEquipe.CHAPA == chapa)
+            .filter(MembroEquipe.CHAPA == chapa_planilha)
             .first()
         )
         item = {
             "linha": numero,
             "equipe": rotulo,
             "composicao_id": composicao.id,
-            "chapa": chapa,
+            "chapa": chapa_planilha,
             "nome": colaborador.NOME or "",
             "conflito": False,
-            "chapa_antiga": str(composicao.membro.CHAPA).strip() if composicao.membro else None,
+            "chapa_antiga": chapa_atual or None,
         }
         if alocacao_existente:
             comp_atual = alocacao_existente.composicao
@@ -2047,21 +2278,24 @@ def analisar_planilha_alocacoes(arquivo, session):
 def baixar_planilha_alocacoes():
     session = SessionLocal()
     try:
-        df = montar_planilha_alocacoes(session)
+        usuario = auth.usuario_logado()
+        df_alocacoes = montar_planilha_alocacoes(session, usuario)
+        df_ativos = montar_planilha_ativos(session)
 
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
-            df.to_excel(writer, index=False, sheet_name="Alocações")
-            planilha = writer.sheets["Alocações"]
-            for coluna in planilha.columns:
-                largura = max(
-                    len(str(celula.value)) if celula.value is not None else 0
-                    for celula in coluna
-                )
-                planilha.column_dimensions[coluna[0].column_letter].width = max(
-                    12, largura + 3
-                )
-            planilha.freeze_panes = "A2"
+            for nome_aba, df in (("Alocações", df_alocacoes), ("Ativos", df_ativos)):
+                df.to_excel(writer, index=False, sheet_name=nome_aba)
+                planilha = writer.sheets[nome_aba]
+                for coluna in planilha.columns:
+                    largura = max(
+                        len(str(celula.value)) if celula.value is not None else 0
+                        for celula in coluna
+                    )
+                    planilha.column_dimensions[coluna[0].column_letter].width = max(
+                        12, largura + 3
+                    )
+                planilha.freeze_panes = "A2"
 
         buffer.seek(0)
         return send_file(
@@ -2785,13 +3019,51 @@ def dados_do_formulario_usuario(dados):
     if nivel not in auth.NIVEIS:
         return None, "Nível de acesso inválido."
 
+    responsavel_bruto = dados.get("responsavel_id")
+    try:
+        responsavel_id = (
+            int(responsavel_bruto) if responsavel_bruto not in (None, "") else None
+        )
+    except (TypeError, ValueError):
+        return None, "Responsável inválido."
+
     return {
         "usuario": nome_usuario,
         "nome": nome,
         "nivel": nivel,
         "ativo": bool(dados.get("ativo", True)),
         "vinculos": dados.get("vinculos") or {},
+        "responsavel_id": responsavel_id,
     }, None
+
+
+def validar_responsavel(session, nivel, responsavel_id, usuario_id=None):
+    """Confere o responsavel (superior direto) informado no formulario de
+    usuario: Coordenador precisa de um Gerente, Supervisor precisa de um
+    Coordenador. Devolve a mensagem de erro, ou None se estiver tudo certo.
+    """
+    nivel_esperado = auth.NIVEL_DO_RESPONSAVEL.get(nivel)
+
+    if not nivel_esperado:
+        if responsavel_id:
+            return "Este nível não tem responsável (Administrador e Gerente ficam no topo da hierarquia)."
+        return None
+
+    if not responsavel_id:
+        return None
+
+    if responsavel_id == usuario_id:
+        return "Um usuário não pode ser responsável por si mesmo."
+
+    responsavel = session.query(Usuario).filter(Usuario.id == responsavel_id).first()
+    if not responsavel:
+        return "Responsável não encontrado."
+    if responsavel.NIVEL != nivel_esperado:
+        rotulo_nivel = auth.NIVEIS[nivel]["rotulo"]
+        rotulo_esperado = auth.NIVEIS[nivel_esperado]["rotulo"]
+        return f"O responsável de um {rotulo_nivel} precisa ser do nível {rotulo_esperado}."
+
+    return None
 
 
 @app.route("/api/usuarios", methods=["GET"])
@@ -2839,12 +3111,19 @@ def criar_usuario():
         if existente:
             return jsonify({"erro": "Já existe um usuário com esse login."}), 400
 
+        problema_responsavel = validar_responsavel(
+            session, campos["nivel"], campos["responsavel_id"]
+        )
+        if problema_responsavel:
+            return jsonify({"erro": problema_responsavel}), 400
+
         usuario = Usuario(
             USUARIO=campos["usuario"],
             NOME=campos["nome"],
             NIVEL=campos["nivel"],
             ATIVO=campos["ativo"],
             SENHA_HASH=auth.gerar_hash_senha(senha),
+            RESPONSAVEL_ID=campos["responsavel_id"],
         )
         session.add(usuario)
         session.flush()
@@ -2916,10 +3195,17 @@ def atualizar_usuario(usuario_id):
                     "erro": "É preciso manter ao menos um Administrador ativo."
                 }), 400
 
+        problema_responsavel = validar_responsavel(
+            session, campos["nivel"], campos["responsavel_id"], usuario_id=usuario_id
+        )
+        if problema_responsavel:
+            return jsonify({"erro": problema_responsavel}), 400
+
         usuario.USUARIO = campos["usuario"]
         usuario.NOME = campos["nome"]
         usuario.NIVEL = campos["nivel"]
         usuario.ATIVO = campos["ativo"]
+        usuario.RESPONSAVEL_ID = campos["responsavel_id"]
 
         if senha:
             usuario.SENHA_HASH = auth.gerar_hash_senha(senha)

@@ -9,7 +9,7 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import backref, relationship
 
 from database.base import Base
 
@@ -167,6 +167,13 @@ class Usuario(Base):
     NIVEL = Column(String, nullable=False)
     ATIVO = Column(Boolean, nullable=False, default=True)
 
+    # Superior direto na hierarquia Gerente -> Coordenador -> Supervisor (o
+    # Coordenador de um Supervisor, o Gerente de um Coordenador). O escopo de
+    # dados de Gerente/Coordenador e calculado em auth.py somando os vinculos
+    # dos Supervisores abaixo dele nesta arvore — nao ha nada gravado aqui
+    # alem do proprio elo.
+    RESPONSAVEL_ID = Column(Integer, ForeignKey("usuarios.id"), nullable=True)
+
     CRIADO_EM = Column(DateTime(timezone=True), server_default=func.now())
     ULTIMO_ACESSO = Column(DateTime(timezone=True), nullable=True)
 
@@ -174,6 +181,12 @@ class Usuario(Base):
         "VinculoUsuario",
         back_populates="usuario",
         cascade="all, delete-orphan"
+    )
+
+    subordinados = relationship(
+        "Usuario",
+        foreign_keys=[RESPONSAVEL_ID],
+        backref=backref("responsavel", remote_side=[id]),
     )
 
 

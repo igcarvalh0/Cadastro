@@ -56,56 +56,26 @@ def normalizar_linha_colaborador(linha):
     }, None
 
 
-def aplicar_linha_colaborador(session, dados):
-    """Upsert do colaborador por CHAPA + rateio (append-only, idempotente por
-    combinação exata CHAPA+RATEIO_FUNCIONARIO+GRPCCUSTO). Devolve
-    (resultado, novo_rateio) onde resultado é 'criado' ou 'atualizado'."""
-    colaborador = (
-        session.query(Colaborador).filter(Colaborador.CHAPA == dados["chapa"]).first()
-    )
-    campos = {
-        campo: dados[campo]
-        for campo in ("NOME", "FUNÇÃO", "ADMISSÃO", "SEÇÃO", "SITUAÇÃO")
-    }
-
-    if colaborador:
-        for campo, valor in campos.items():
-            setattr(colaborador, campo, valor)
-        resultado = "atualizado"
-    else:
-        colaborador = Colaborador(CHAPA=dados["chapa"], **campos)
-        session.add(colaborador)
-        session.flush()
-        resultado = "criado"
-
-    novo_rateio = False
-    if dados["rateio_funcionario"]:
-        existente = (
-            session.query(Rateio)
-            .filter(
-                Rateio.CHAPA == dados["chapa"],
-                Rateio.RATEIO_FUNCIONARIO == dados["rateio_funcionario"],
-                Rateio.GRPCCUSTO == dados["grpccusto"],
-            )
-            .first()
-        )
-        if not existente:
-            session.add(Rateio(
-                CHAPA=dados["chapa"],
-                RATEIO_FUNCIONARIO=dados["rateio_funcionario"],
-                GRPCCUSTO=dados["grpccusto"],
-            ))
-            novo_rateio = True
-
-    return resultado, novo_rateio
-
-
 def processar_planilha_colaboradores(arquivo, session, aplicar):
-    """Le a planilha inteira e aplica linha a linha na sessao dada.
+    """Le a planilha inteira e faz o upsert de todos os colaboradores/rateios
+    na sessao dada, em lote — nao linha a linha.
+
+    A planilha real (cadastro.xlsx) tem uma linha por CHAPA+rateio, entao um
+    cadastro de ~1200 colaboradores facilmente passa de 1200 linhas. A versao
+    anterior fazia 1 SELECT + 1 flush por linha (contra o Postgres remoto da
+    Neon, sem banco local de desenvolvimento — ver banco-producao-neon na
+    memoria do projeto), o que estourava o timeout do navegador antes de
+    terminar. Aqui a busca dos colaboradores/rateios existentes e feita uma
+    unica vez (2 SELECTs com IN, nao N), e o flush por linha foi removido —
+    ele so existia para o Rateio enxergar o id do Colaborador recem-criado,
+    mas Rateio.CHAPA referencia Colaborador.CHAPA (a chave de negocio, nao o
+    id serial), entao o flush nunca foi necessario.
 
     aplicar=False roda a mesma lógica de upsert mas o chamador é quem decide
     se comita ou dá rollback (usado para gerar uma prévia sem gravar nada).
-    Devolve um resumo com contagens e erros por linha.
+    Devolve um resumo com contagens (por CHAPA unica, nao por linha — uma
+    chapa com 3 linhas de rateio conta 1 vez em criados/atualizados) e erros
+    por linha.
     """
     try:
         df = pd.read_excel(arquivo)
@@ -119,20 +89,65 @@ def processar_planilha_colaboradores(arquivo, session, aplicar):
 
     resumo = {"criados": 0, "atualizados": 0, "rateios_novos": 0, "erros": []}
 
+    linhas_validas = []
     for indice, linha in df.iterrows():
         numero = int(indice) + 2
         dados, erro = normalizar_linha_colaborador(linha)
         if erro:
             resumo["erros"].append({"linha": numero, "erro": erro})
             continue
+        linhas_validas.append(dados)
 
-        resultado, novo_rateio = aplicar_linha_colaborador(session, dados)
-        if resultado == "criado":
-            resumo["criados"] += 1
+    if not linhas_validas:
+        return resumo
+
+    chapas = {dados["chapa"] for dados in linhas_validas}
+
+    colaboradores_existentes = {
+        c.CHAPA: c
+        for c in session.query(Colaborador).filter(Colaborador.CHAPA.in_(chapas)).all()
+    }
+
+    rateios_existentes = {
+        (r.CHAPA, r.RATEIO_FUNCIONARIO, r.GRPCCUSTO)
+        for r in session.query(Rateio).filter(Rateio.CHAPA.in_(chapas)).all()
+    }
+
+    chapas_ja_contadas = set()
+    rateios_ja_adicionados = set()
+
+    for dados in linhas_validas:
+        chapa = dados["chapa"]
+        campos = {
+            campo: dados[campo]
+            for campo in ("NOME", "FUNÇÃO", "ADMISSÃO", "SEÇÃO", "SITUAÇÃO")
+        }
+
+        colaborador = colaboradores_existentes.get(chapa)
+        if colaborador:
+            for campo, valor in campos.items():
+                setattr(colaborador, campo, valor)
+            if chapa not in chapas_ja_contadas:
+                resumo["atualizados"] += 1
         else:
-            resumo["atualizados"] += 1
-        if novo_rateio:
-            resumo["rateios_novos"] += 1
+            colaborador = Colaborador(CHAPA=chapa, **campos)
+            session.add(colaborador)
+            colaboradores_existentes[chapa] = colaborador
+            if chapa not in chapas_ja_contadas:
+                resumo["criados"] += 1
+
+        chapas_ja_contadas.add(chapa)
+
+        if dados["rateio_funcionario"]:
+            chave = (chapa, dados["rateio_funcionario"], dados["grpccusto"])
+            if chave not in rateios_existentes and chave not in rateios_ja_adicionados:
+                session.add(Rateio(
+                    CHAPA=chapa,
+                    RATEIO_FUNCIONARIO=dados["rateio_funcionario"],
+                    GRPCCUSTO=dados["grpccusto"],
+                ))
+                rateios_ja_adicionados.add(chave)
+                resumo["rateios_novos"] += 1
 
     return resumo
 

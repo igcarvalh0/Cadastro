@@ -123,6 +123,93 @@ def test_supervisor_sem_vinculos_nao_atua_em_nada():
     assert auth.pode_atuar_na_base_e_tipo(supervisor, "BACABAL", "PODA") is False
 
 
+def test_setor_e_equipe_nao_restringem_quando_ausentes():
+    """Quem so usa BASE+TIPO_EQUIPE continua funcionando igual, mesmo com
+    SETOR/EQUIPE existindo como vinculo possivel para outros usuarios."""
+    supervisor = {
+        "ignora_vinculos": False,
+        "vinculos": {
+            auth.VINCULO_BASE: ["BACABAL"],
+            auth.VINCULO_TIPO_EQUIPE: ["PODA"],
+        },
+    }
+
+    assert auth.pode_atuar_na_base_e_tipo(
+        supervisor, "BACABAL", "PODA", setor="Setor Leste", equipe_id=99
+    ) is True
+    assert auth.pode_atuar_na_base_e_tipo(supervisor, "BACABAL", "PODA") is True
+
+
+def test_setor_restringe_quando_cadastrado():
+    supervisor = {
+        "ignora_vinculos": False,
+        "vinculos": {
+            auth.VINCULO_BASE: ["BACABAL"],
+            auth.VINCULO_TIPO_EQUIPE: ["PODA"],
+            auth.VINCULO_SETOR: ["Setor Leste"],
+        },
+    }
+
+    assert auth.pode_atuar_na_base_e_tipo(
+        supervisor, "BACABAL", "PODA", setor="Setor Leste"
+    ) is True
+    assert auth.pode_atuar_na_base_e_tipo(
+        supervisor, "BACABAL", "PODA", setor="Setor Oeste"
+    ) is False
+    # base e tipo batem, mas sem setor nenhum informado tambem nao bate
+    assert auth.pode_atuar_na_base_e_tipo(supervisor, "BACABAL", "PODA") is False
+
+
+def test_equipe_especifica_restringe_quando_cadastrada():
+    supervisor = {
+        "ignora_vinculos": False,
+        "vinculos": {
+            auth.VINCULO_BASE: ["BACABAL"],
+            auth.VINCULO_TIPO_EQUIPE: ["PODA"],
+            auth.VINCULO_EQUIPE: ["12"],
+        },
+    }
+
+    assert auth.pode_atuar_na_base_e_tipo(
+        supervisor, "BACABAL", "PODA", equipe_id=12
+    ) is True
+    assert auth.pode_atuar_na_base_e_tipo(
+        supervisor, "BACABAL", "PODA", equipe_id=13
+    ) is False
+
+
+# ============================================================
+# VISIBILIDADE DE EQUIPE
+# ============================================================
+
+def test_equipe_visivel_basta_uma_vaga_bater():
+    supervisor = {
+        "ignora_vinculos": False,
+        "vinculos": {
+            auth.VINCULO_BASE: ["BACABAL"],
+            auth.VINCULO_TIPO_EQUIPE: ["PODA"],
+        },
+    }
+
+    pares = [("CONSTRUÇÃO", "Setor Oeste"), ("PODA", "Setor Leste")]
+    assert auth.equipe_visivel(supervisor, "BACABAL", pares) is True
+
+
+def test_equipe_visivel_respeita_setor_cadastrado():
+    supervisor = {
+        "ignora_vinculos": False,
+        "vinculos": {
+            auth.VINCULO_BASE: ["BACABAL"],
+            auth.VINCULO_TIPO_EQUIPE: ["PODA"],
+            auth.VINCULO_SETOR: ["Setor Leste"],
+        },
+    }
+
+    # so tem vaga de Poda no Setor Oeste: nao bate
+    assert auth.equipe_visivel(supervisor, "BACABAL", [("PODA", "Setor Oeste")]) is False
+    assert auth.equipe_visivel(supervisor, "BACABAL", [("PODA", "Setor Leste")]) is True
+
+
 # ============================================================
 # VÍNCULOS
 # ============================================================
@@ -150,13 +237,13 @@ def test_substituir_vinculos_guarda_os_tipos_conhecidos():
 
     auth.substituir_vinculos(SessaoFalsa(), usuario, {
         "BASE": ["BACABAL", "PEDREIRAS"],
-        "SETOR": ["Setor Leste"],
+        "TIPO_EQUIPE": ["PODA"],
     })
 
     assert vinculos_como_pares(usuario) == [
         ("BASE", "BACABAL"),
         ("BASE", "PEDREIRAS"),
-        ("SETOR", "Setor Leste"),
+        ("TIPO_EQUIPE", "PODA"),
     ]
 
 
@@ -179,9 +266,9 @@ def test_substituir_vinculos_troca_os_antigos():
     usuario = UsuarioComVinculos()
 
     auth.substituir_vinculos(SessaoFalsa(), usuario, {"BASE": ["BACABAL"]})
-    auth.substituir_vinculos(SessaoFalsa(), usuario, {"SETOR": ["Setor Novo"]})
+    auth.substituir_vinculos(SessaoFalsa(), usuario, {"TIPO_EQUIPE": ["PODA"]})
 
-    assert vinculos_como_pares(usuario) == [("SETOR", "Setor Novo")]
+    assert vinculos_como_pares(usuario) == [("TIPO_EQUIPE", "PODA")]
 
 
 def test_sem_vinculos_nao_quebra():

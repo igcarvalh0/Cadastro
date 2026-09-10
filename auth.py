@@ -17,6 +17,7 @@ COMO FUNCIONA
 from functools import wraps
 
 from flask import g, jsonify, session
+from sqlalchemy.orm import joinedload
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from database.database import SessionLocal
@@ -50,8 +51,21 @@ TODAS_PERMISSOES = (
 )
 
 NIVEL_ADMINISTRADOR = "ADMINISTRADOR"
+NIVEL_GERENTE = "GERENTE"
+NIVEL_COORDENADOR = "COORDENADOR"
 NIVEL_SUPERVISOR = "SUPERVISOR"
-NIVEL_ANALISTA = "ANALISTA"
+
+# Niveis que ficam acima do Supervisor na hierarquia e herdam escopo dos
+# Supervisores abaixo deles (ver escopo_efetivo). Nao tem vinculo proprio.
+NIVEIS_HIERARQUICOS = (NIVEL_GERENTE, NIVEL_COORDENADOR)
+
+# Nivel que cada um destes pode escolher como RESPONSAVEL_ID (o superior
+# direto): um Coordenador responde a um Gerente, um Supervisor a um
+# Coordenador. Gerente nao tem responsavel (topo da arvore).
+NIVEL_DO_RESPONSAVEL = {
+    NIVEL_COORDENADOR: NIVEL_GERENTE,
+    NIVEL_SUPERVISOR: NIVEL_COORDENADOR,
+}
 
 # ------------------------------------------------------------
 # NIVEIS
@@ -62,15 +76,34 @@ NIVEL_ANALISTA = "ANALISTA"
 # frontend.
 #
 # O nivel antigo "MESTRE" foi renomeado para "ADMINISTRADOR" (codigo e banco
-# — ver migrations/006_renomear_mestre_para_administrador.sql). Nao existe
-# mais nenhuma referencia a "mestre" no sistema, so historico em migrations
-# antigas.
+# — ver migrations/006_renomear_mestre_para_administrador.sql). O nivel
+# "ANALISTA" foi descontinuado (nenhum usuario real o usava) em favor da
+# hierarquia Gerente -> Coordenador -> Supervisor (migrations/008).
 NIVEIS = {
     NIVEL_ADMINISTRADOR: {
         "rotulo": "Administrador",
         "descricao": "Acesso total, inclusive ao cadastro de usuários.",
         "permissoes": set(TODAS_PERMISSOES),
         "ignora_vinculos": True,
+    },
+    NIVEL_GERENTE: {
+        "rotulo": "Gerente",
+        "descricao": (
+            "Aloca e remove colaboradores em todas as equipes e bases dos "
+            "Coordenadores sob sua responsabilidade (e dos Supervisores "
+            "deles)."
+        ),
+        "permissoes": {VER_RESUMO, VER_EQUIPES, ALOCAR, REMOVER_ALOCACAO},
+        "ignora_vinculos": False,
+    },
+    NIVEL_COORDENADOR: {
+        "rotulo": "Coordenador",
+        "descricao": (
+            "Aloca e remove colaboradores em todas as equipes e bases dos "
+            "Supervisores sob sua responsabilidade."
+        ),
+        "permissoes": {VER_RESUMO, VER_EQUIPES, ALOCAR, REMOVER_ALOCACAO},
+        "ignora_vinculos": False,
     },
     NIVEL_SUPERVISOR: {
         "rotulo": "Supervisor",
@@ -79,16 +112,6 @@ NIVEIS = {
             "somente nas bases e nos tipos de equipe vinculados a ele."
         ),
         "permissoes": {VER_RESUMO, VER_EQUIPES, ALOCAR, REMOVER_ALOCACAO},
-        "ignora_vinculos": False,
-    },
-    NIVEL_ANALISTA: {
-        "rotulo": "Analista",
-        "descricao": (
-            "Visualiza o resumo e as equipes. Alocar, editar e remover só "
-            "funcionam se a operação estiver marcada aqui E a equipe/base/"
-            "setor estiver nos vínculos dele, no cadastro do usuário."
-        ),
-        "permissoes": {VER_RESUMO, VER_EQUIPES},
         "ignora_vinculos": False,
     },
 }
@@ -105,16 +128,26 @@ NIVEIS_PERMISSOES_FIXAS = {NIVEL_ADMINISTRADOR}
 VINCULO_BASE = "BASE"
 VINCULO_TIPO_EQUIPE = "TIPO_EQUIPE"
 VINCULO_SETOR = "SETOR"
-VINCULO_SUPERVISOR = "SUPERVISOR"
-VINCULO_COORDENADOR = "COORDENADOR"
-VINCULO_EQUIPE = "EQUIPE"          # id de uma equipe especifica (Analista)
+VINCULO_EQUIPE = "EQUIPE"          # id de uma equipe especifica
 
+# SUPERVISOR e COORDENADOR existiram aqui como vinculo (texto livre) antes da
+# hierarquia Gerente -> Coordenador -> Supervisor existir. Esse laco agora e
+# RESPONSAVEL_ID (o campo "Responde a" na tela, ver escopo_efetivo) — manter
+# os dois de pe causava confusao (um Supervisor ligado ao Coordenador pelo
+# vinculo errado, e nao pelo responsavel, ficava fora do escopo dele). Nao
+# recriar um vinculo chamado "Coordenador"/"Supervisor": quem manda nisso e
+# RESPONSAVEL_ID.
+#
+# BASE e TIPO_EQUIPE sao obrigatorios para enxergar/agir numa vaga (ver
+# pode_atuar_na_base_e_tipo). SETOR e EQUIPE sao filtros OPCIONAIS que so
+# entram em vigor quando o usuario tem aquele vinculo cadastrado — sem ele, a
+# dimensao correspondente nao restringe nada, pra nao quebrar quem so usa
+# BASE+TIPO_EQUIPE. O valor de SETOR casa com o campo SETOR da vaga (editavel
+# na tela de vagas e na planilha de equipes, ver ComposicaoEquipe.SETOR).
 TIPOS_VINCULO = {
     VINCULO_BASE: "Base",
     VINCULO_TIPO_EQUIPE: "Tipo de equipe",
     VINCULO_SETOR: "Setor",
-    VINCULO_SUPERVISOR: "Supervisor",
-    VINCULO_COORDENADOR: "Coordenador",
     VINCULO_EQUIPE: "Equipe específica",
 }
 
@@ -243,6 +276,67 @@ def substituir_permissoes_nivel(session, nivel, permissoes):
         session.add(NivelPermissao(NIVEL=nivel, PERMISSAO=permissao))
 
 
+def _supervisores_subordinados(session, usuario_id, visitados=None):
+    """Todos os usuarios NIVEL_SUPERVISOR alcancaveis a partir de usuario_id
+    descendo a arvore de RESPONSAVEL_ID (Gerente -> Coordenador -> Supervisor).
+
+    'visitados' evita loop infinito se alguem cadastrar um ciclo por engano
+    (ex.: A responde a B e B responde a A).
+    """
+    visitados = visitados if visitados is not None else set()
+    if usuario_id in visitados:
+        return []
+    visitados.add(usuario_id)
+
+    filhos = (
+        session.query(Usuario)
+        .options(joinedload(Usuario.vinculos))
+        .filter(Usuario.RESPONSAVEL_ID == usuario_id)
+        .all()
+    )
+
+    supervisores = []
+    for filho in filhos:
+        if filho.NIVEL == NIVEL_SUPERVISOR:
+            supervisores.append(filho)
+        else:
+            supervisores.extend(_supervisores_subordinados(session, filho.id, visitados))
+    return supervisores
+
+
+def escopo_efetivo(session, usuario):
+    """Para GERENTE/COORDENADOR: uniao dos vinculos de todos os Supervisores
+    abaixo dele na hierarquia (RESPONSAVEL_ID). E o que faz 'alocar nas
+    equipes dos Supervisores sob sua responsabilidade' virar uma checagem de
+    dados de verdade, e nao so uma frase na tela.
+
+    SETOR e EQUIPE so entram no resultado quando algum Supervisor os usa —
+    ausencia continua significando 'nao restringe' (ver pode_atuar_na_base_e_tipo).
+    """
+    bases = set()
+    tipos = set()
+    setores = set()
+    equipes = set()
+
+    for supervisor in _supervisores_subordinados(session, usuario.id):
+        for vinculo in supervisor.vinculos:
+            if vinculo.TIPO == VINCULO_BASE:
+                bases.add(vinculo.VALOR)
+            elif vinculo.TIPO == VINCULO_TIPO_EQUIPE:
+                tipos.add(vinculo.VALOR)
+            elif vinculo.TIPO == VINCULO_SETOR:
+                setores.add(vinculo.VALOR)
+            elif vinculo.TIPO == VINCULO_EQUIPE:
+                equipes.add(vinculo.VALOR)
+
+    escopo = {VINCULO_BASE: sorted(bases), VINCULO_TIPO_EQUIPE: sorted(tipos)}
+    if setores:
+        escopo[VINCULO_SETOR] = sorted(setores)
+    if equipes:
+        escopo[VINCULO_EQUIPE] = sorted(equipes)
+    return escopo
+
+
 def descrever_usuario(usuario, incluir_vinculos=True, session=None):
     """Formato que vai para a tela e para as checagens de permissao."""
     dados = {
@@ -256,13 +350,20 @@ def descrever_usuario(usuario, incluir_vinculos=True, session=None):
         "ignora_vinculos": bool(
             NIVEIS.get(usuario.NIVEL, {}).get("ignora_vinculos", False)
         ),
+        "responsavel_id": usuario.RESPONSAVEL_ID,
+        "responsavel_nome": usuario.responsavel.NOME if usuario.responsavel else None,
     }
 
     if incluir_vinculos:
-        vinculos = {}
-        for vinculo in usuario.vinculos:
-            vinculos.setdefault(vinculo.TIPO, []).append(vinculo.VALOR)
-        dados["vinculos"] = {tipo: sorted(v) for tipo, v in vinculos.items()}
+        if usuario.NIVEL in NIVEIS_HIERARQUICOS and session is not None:
+            # Gerente/Coordenador nao tem vinculo proprio: o escopo dele E a
+            # soma dos vinculos dos Supervisores abaixo, calculada agora.
+            dados["vinculos"] = escopo_efetivo(session, usuario)
+        else:
+            vinculos = {}
+            for vinculo in usuario.vinculos:
+                vinculos.setdefault(vinculo.TIPO, []).append(vinculo.VALOR)
+            dados["vinculos"] = {tipo: sorted(v) for tipo, v in vinculos.items()}
 
     return dados
 
@@ -272,12 +373,16 @@ def tem_permissao(permissao, usuario=None):
     return bool(usuario) and permissao in usuario["permissoes"]
 
 
-def pode_atuar_na_base_e_tipo(usuario, base, tipo_equipe):
+def pode_atuar_na_base_e_tipo(usuario, base, tipo_equipe, setor=None, equipe_id=None):
     """Diz se o usuario pode alocar/remover numa vaga daquela base e tipo.
 
     ADMINISTRADOR (ignora_vinculos) sempre pode. Os demais precisam ter um vinculo
     BASE que bata com a base da vaga E um vinculo TIPO_EQUIPE que bata com o
     tipo dela — as duas coisas ao mesmo tempo, nao uma ou outra.
+
+    SETOR e EQUIPE (uma equipe especifica) sao filtros a mais, só aplicados
+    quando o usuario tem aquele vinculo cadastrado: quem nao usa SETOR/EQUIPE
+    continua funcionando so com BASE+TIPO_EQUIPE, como antes.
     """
     if not usuario:
         return False
@@ -288,7 +393,44 @@ def pode_atuar_na_base_e_tipo(usuario, base, tipo_equipe):
     bases = set(vinculos.get(VINCULO_BASE, []))
     tipos = set(vinculos.get(VINCULO_TIPO_EQUIPE, []))
 
-    return base in bases and tipo_equipe in tipos
+    if base not in bases or tipo_equipe not in tipos:
+        return False
+
+    setores = set(vinculos.get(VINCULO_SETOR, []))
+    if setores and setor not in setores:
+        return False
+
+    equipes = set(vinculos.get(VINCULO_EQUIPE, []))
+    if equipes and (equipe_id is None or str(equipe_id) not in equipes):
+        return False
+
+    return True
+
+
+def equipe_visivel(usuario, base, tipos_e_setores, equipe_id=None):
+    """Diz se o usuario pode VER aquela equipe nas telas de Resumo/Banco de
+    Dados/Cadastro de Vagas — nao so alocar/remover nela.
+
+    ADMINISTRADOR ve tudo. Os demais (Supervisor, e Coordenador/Gerente pelo
+    escopo herdado em usuario['vinculos'], ver escopo_efetivo) so veem a
+    equipe se pelo menos uma das vagas dela bater com todos os vinculos do
+    usuario — a equipe Folguista, por exemplo, pode ter vagas de varias
+    disciplinas e setores ao mesmo tempo, entao basta UMA bater.
+
+    'tipos_e_setores' e uma lista de pares (tipo, setor), um por disciplina
+    presente na equipe (SETOR e por vaga — ver tipos_e_setores_da_equipe em
+    app.py).
+    """
+    if not usuario:
+        return False
+    if usuario.get("ignora_vinculos"):
+        return True
+
+    pares = tipos_e_setores or [(None, None)]
+    return any(
+        pode_atuar_na_base_e_tipo(usuario, base, tipo, setor=setor, equipe_id=equipe_id)
+        for tipo, setor in pares
+    )
 
 
 def pode_realizar_operacao(
@@ -301,9 +443,13 @@ def pode_realizar_operacao(
     permissoes). "Sobre quais equipes" continua nos vinculos do usuario.
 
     ADMINISTRADOR (ignora_vinculos) sempre pode.
-    SUPERVISOR e ANALISTA: precisam ter a permissao da operacao E bater em
-      pelo menos um recorte de dados: equipe especifica (vinculo EQUIPE),
-      ou base+tipo juntos, ou setor (vinculo SETOR).
+    SUPERVISOR: precisa ter a permissao da operacao E os vinculos (BASE+TIPO_EQUIPE
+      obrigatorios, SETOR e EQUIPE quando cadastrados) batendo com a vaga
+      (ver pode_atuar_na_base_e_tipo).
+    GERENTE e COORDENADOR: mesma regra, mas usando o escopo EFETIVO — a uniao
+      dos vinculos de todos os Supervisores abaixo dele na hierarquia (ja
+      resolvida em descrever_usuario/escopo_efetivo e devolvida em
+      usuario["vinculos"], entao a checagem em si e identica a do Supervisor).
     """
     if not usuario:
         return False
@@ -315,21 +461,11 @@ def pode_realizar_operacao(
         return False
 
     nivel = usuario.get("nivel")
-    vinculos = usuario.get("vinculos") or {}
 
-    if nivel == NIVEL_ANALISTA:
-        equipes = set(vinculos.get(VINCULO_EQUIPE, []))
-        if equipe_id is not None and str(equipe_id) in equipes:
-            return True
-
-        setores = set(vinculos.get(VINCULO_SETOR, []))
-        if setor and setor in setores:
-            return True
-
-        return pode_atuar_na_base_e_tipo(usuario, base, tipo_equipe)
-
-    if nivel == NIVEL_SUPERVISOR:
-        return pode_atuar_na_base_e_tipo(usuario, base, tipo_equipe)
+    if nivel in (NIVEL_SUPERVISOR, NIVEL_COORDENADOR, NIVEL_GERENTE):
+        return pode_atuar_na_base_e_tipo(
+            usuario, base, tipo_equipe, setor=setor, equipe_id=equipe_id
+        )
 
     # Nivel sem regra de escopo definida: nega por padrao.
     return False

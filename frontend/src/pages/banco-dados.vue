@@ -34,7 +34,7 @@
         <!-- FILTROS -->
         <!-- ================================================== -->
 
-        <q-card flat bordered class="q-mb-md">
+        <q-card flat bordered class="q-mb-md barra-filtros">
           <q-card-section>
             <div class="row items-center q-col-gutter-md">
               <div class="col-12 col-md-4">
@@ -50,7 +50,11 @@
                   emit-value
                   map-options
                   @update:model-value="atualizarSelecaoBases"
-                />
+                >
+                  <template #prepend>
+                    <q-icon name="place" size="20px" />
+                  </template>
+                </q-select>
               </div>
 
               <div class="col-12 col-md-3">
@@ -62,7 +66,11 @@
                   dense
                   emit-value
                   map-options
-                />
+                >
+                  <template #prepend>
+                    <q-icon name="category" size="20px" />
+                  </template>
+                </q-select>
               </div>
 
               <div class="col-12 col-md-3">
@@ -74,7 +82,11 @@
                   dense
                   emit-value
                   map-options
-                />
+                >
+                  <template #prepend>
+                    <q-icon name="apartment" size="20px" />
+                  </template>
+                </q-select>
               </div>
 
               <div class="col-12 col-md-2">
@@ -732,9 +744,12 @@
           </q-file>
 
           <div class="text-caption text-grey-7 q-mt-sm">
-            Preencha a coluna AÇÃO com <strong>alocar</strong>,
-            <strong>editar</strong> (troca o colaborador da vaga) ou
-            <strong>remover</strong>. Linha sem ação é ignorada.
+            A planilha tem duas abas: <strong>Alocações</strong> (para editar) e
+            <strong>Ativos</strong> (consulta de colaboradores ativos). Na aba
+            Alocações, preencha a coluna <strong>CHAPA</strong> com quem deve
+            ocupar a vaga — deixe em branco para liberar. O sistema compara com
+            o que já está no banco e identifica sozinho novas alocações,
+            remoções e trocas. Linha sem mudança é ignorada.
           </div>
 
           <div class="row q-gutter-sm q-mt-md">

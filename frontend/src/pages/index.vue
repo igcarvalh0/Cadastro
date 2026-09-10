@@ -34,12 +34,12 @@
         <!-- FILTRO DE BASE -->
         <!-- ================================================== -->
 
-        <q-card flat bordered class="q-mb-md">
+        <q-card flat bordered class="q-mb-md barra-filtros">
           <q-card-section>
             <div class="row items-center q-col-gutter-md">
               <div class="col-12 col-md-4">
                 <q-select
-                  v-model="baseSelecionada"
+                  :model-value="baseSelecionada"
                   :options="opcoesBases"
                   label="Base"
                   outlined
@@ -49,7 +49,12 @@
                   use-chips
                   emit-value
                   map-options
-                />
+                  @update:model-value="atualizarSelecaoBases"
+                >
+                  <template #prepend>
+                    <q-icon name="place" size="20px" />
+                  </template>
+                </q-select>
               </div>
 
               <div class="col-12 col-md-3">
@@ -62,7 +67,11 @@
                   emit-value
                   map-options
                   @update:model-value="carregarResumo"
-                />
+                >
+                  <template #prepend>
+                    <q-icon name="category" size="20px" />
+                  </template>
+                </q-select>
               </div>
 
               <div class="col-12 col-md-2">
@@ -75,7 +84,11 @@
                   emit-value
                   map-options
                   @update:model-value="carregarResumo"
-                />
+                >
+                  <template #prepend>
+                    <q-icon name="apartment" size="20px" />
+                  </template>
+                </q-select>
               </div>
 
               <div class="col-auto">
@@ -278,78 +291,7 @@
 
             <transition name="fade" mode="out-in">
               <div v-if="visaoIndicadores === 'cards'" key="cards">
-                <q-card bordered class="card-total-compacto">
-                  <q-card-section>
-                    <div class="text-h6 q-mb-md">Total geral</div>
-
-                    <div class="row q-col-gutter-sm">
-                      <div
-                        v-for="indicador in indicadoresFuncoes"
-                        :key="indicador.funcao"
-                        class="col-12 col-sm-6"
-                      >
-                        <q-card
-                          flat
-                          bordered
-                          class="cursor-pointer indicador-compacto"
-                          :class="
-                            indicador.diferenca < 0 ? 'bg-red-1' : 'bg-green-1'
-                          "
-                          @click="
-                            abrirNecessidades(
-                              indicador.funcao,
-                              '',
-                              indicador.diferenca < 0 ? 'deficit' : 'superavit'
-                            )
-                          "
-                        >
-                          <q-card-section>
-                            <div class="text-caption text-grey-8">
-                              {{ indicador.funcao }}
-                            </div>
-
-                            <div
-                              class="text-h6"
-                              :class="
-                                indicador.diferenca < 0
-                                  ? 'text-negative'
-                                  : 'text-positive'
-                              "
-                            >
-                              {{
-                                indicador.diferenca < 0 ? 'Déficit' : 'Superávit'
-                              }}:
-                              {{ indicador.diferenca }}
-                            </div>
-                          </q-card-section>
-                        </q-card>
-                      </div>
-                    </div>
-
-                    <!-- ============================================= -->
-                    <!-- DIFERENÇA TOTAL -->
-                    <!-- ============================================= -->
-
-                    <div class="row justify-center q-mt-lg">
-                      <q-chip
-                        :color="
-                          totalExibido.diferenca < 0
-                            ? 'negative'
-                            : totalExibido.diferenca > 0
-                              ? 'positive'
-                              : 'grey-6'
-                        "
-                        text-color="white"
-                        size="lg"
-                      >
-                        DIFERENÇA TOTAL:
-                        {{ totalExibido.diferenca }}
-                      </q-chip>
-                    </div>
-                  </q-card-section>
-                </q-card>
-
-                <q-card bordered class="q-mt-lg">
+                <q-card bordered>
                   <q-card-section>
                     <div class="text-h6 q-mb-md">Pessoas alocadas</div>
 
@@ -477,16 +419,17 @@
               </div>
 
               <div v-else key="tabela">
-                <q-card
-                  v-for="base in basesExibidas"
-                  :key="base.codigo"
-                  bordered
-                  class="q-mb-md"
-                >
+                <!-- ========================================================= -->
+                <!-- COMPOSIÇÃO CONSOLIDADA: soma todas as bases do filtro     -->
+                <!-- ativo em uma única tabela, em vez de um card por base.    -->
+                <!-- ========================================================= -->
+
+                <q-card bordered class="q-mb-md">
                   <q-card-section>
-                    <div class="text-h6">{{ base.base }}</div>
+                    <div class="text-h6">Composição</div>
                     <div class="text-caption">
-                      {{ base.codigo }} · {{ base.equipes }} equipe(s)
+                      {{ basesExibidas.length }} base(s) ·
+                      {{ composicaoConsolidada.reduce((s, g) => s + g.equipes, 0) }} equipe(s)
                     </div>
                   </q-card-section>
 
@@ -505,7 +448,7 @@
                       </thead>
 
                       <tbody>
-                        <template v-for="grupo in base.grupos" :key="grupo.rotulo">
+                        <template v-for="grupo in composicaoConsolidada" :key="grupo.rotulo">
                           <tr
                             v-for="(linha, indice) in grupo.funcoes"
                             :key="grupo.rotulo + '-' + linha.funcao"
@@ -534,7 +477,7 @@
                                 dense
                                 color="primary"
                                 :label="String(linha.alocados)"
-                                @click="abrirDetalhes(linha.funcao, base.codigo)"
+                                @click="abrirDetalhes(linha.funcao)"
                               />
                               <span v-else>0</span>
                             </td>
@@ -553,9 +496,92 @@
                   </q-card-section>
                 </q-card>
 
-                <div v-if="!basesExibidas.length" class="text-center text-grey-6 q-pa-md">
+                <div v-if="!composicaoConsolidada.length" class="text-center text-grey-6 q-pa-md">
                   Nenhum dado para os filtros atuais.
                 </div>
+
+                <!-- ========================================================= -->
+                <!-- TOTAL GERAL: parte do próprio indicador Composição,       -->
+                <!-- respeitando os mesmos filtros ativos.                     -->
+                <!-- ========================================================= -->
+
+                <q-card v-if="composicaoConsolidada.length" bordered class="card-total-compacto">
+                  <q-card-section>
+                    <div class="text-h6 q-mb-md">Total geral</div>
+
+                    <div class="row q-col-gutter-sm">
+                      <div
+                        v-for="indicador in indicadoresFuncoes"
+                        :key="indicador.funcao"
+                        class="col-12 col-sm-6"
+                      >
+                        <q-card
+                          flat
+                          bordered
+                          class="cursor-pointer indicador-compacto"
+                          :class="
+                            indicador.diferenca < 0 ? 'bg-red-1' : 'bg-green-1'
+                          "
+                          @click="
+                            abrirNecessidades(
+                              indicador.funcao,
+                              '',
+                              indicador.diferenca < 0 ? 'deficit' : 'superavit'
+                            )
+                          "
+                        >
+                          <q-card-section>
+                            <div class="text-caption text-grey-8">
+                              {{ indicador.funcao }}
+                            </div>
+
+                            <div
+                              class="text-h6"
+                              :class="
+                                indicador.diferenca < 0
+                                  ? 'text-negative'
+                                  : 'text-positive'
+                              "
+                            >
+                              {{
+                                indicador.diferenca < 0 ? 'Déficit' : 'Superávit'
+                              }}:
+                              {{ indicador.diferenca }}
+                            </div>
+                          </q-card-section>
+                        </q-card>
+                      </div>
+                    </div>
+
+                    <div class="row justify-center q-mt-lg q-col-gutter-sm">
+                      <div class="col-auto">
+                        <q-chip color="grey-7" text-color="white" size="lg">
+                          VAGAS: {{ totalExibido.vagas }}
+                        </q-chip>
+                      </div>
+                      <div class="col-auto">
+                        <q-chip color="positive" text-color="white" size="lg">
+                          ALOCADOS: {{ totalExibido.alocados }}
+                        </q-chip>
+                      </div>
+                      <div class="col-auto">
+                        <q-chip
+                          :color="
+                            totalExibido.diferenca < 0
+                              ? 'negative'
+                              : totalExibido.diferenca > 0
+                                ? 'positive'
+                                : 'grey-6'
+                          "
+                          text-color="white"
+                          size="lg"
+                        >
+                          DIFERENÇA TOTAL: {{ totalExibido.diferenca }}
+                        </q-chip>
+                      </div>
+                    </div>
+                  </q-card-section>
+                </q-card>
               </div>
             </transition>
 
@@ -673,7 +699,9 @@ import MarcaDaguaFundo from '../components/MarcaDaguaFundo.vue'
 import {
   CHAVE_BASES_SELECIONADAS,
   FUNCOES_SISTEMA,
-  OPCAO_TODAS_BASES
+  normalizarSelecaoBases,
+  OPCAO_TODAS_BASES,
+  proximaSelecaoBases
 } from '../utils/equipes'
 
 // mantem /resumo valendo como atalho para a tela principal
@@ -693,7 +721,7 @@ const tiposFiltro = ref([])
 const setorSelecionado = ref('')
 const setoresFiltro = ref([])
 
-const visaoIndicadores = ref('cards')
+const visaoIndicadores = ref('tabela')
 
 const carregando = ref(false)
 
@@ -743,12 +771,23 @@ const opcoesSetores = computed(() => [
 ])
 
 const opcoesBases = computed(() => {
-  return basesFiltro.value.map(item => ({
-    label: `${item.base} (${item.codigo})`,
+  const opcoes = [
+    {
+      label: 'Todas as bases',
+      value: OPCAO_TODAS_BASES
+    },
+    ...basesFiltro.value.map(item => ({
+      label: `${item.base} (${item.codigo})`,
+      value: item.base
+    }))
+  ]
 
-    value: item.base
-  }))
+  return opcoes
 })
+
+function atualizarSelecaoBases(selecao) {
+  baseSelecionada.value = proximaSelecaoBases(baseSelecionada.value, selecao)
+}
 
 const basesExibidas = computed(() => {
   if (
@@ -788,6 +827,64 @@ const totalExibido = computed(() => {
     alocados,
     diferenca: alocados - vagas
   }
+})
+
+function ordemFuncaoIndice(funcao) {
+  const indice = FUNCOES_SISTEMA.indexOf(funcao)
+  return indice === -1 ? 99 : indice
+}
+
+// Consolida a Composição em uma única tabela por (disciplina, função),
+// somando todas as bases do filtro ativo em vez de mostrar um card por base.
+const composicaoConsolidada = computed(() => {
+  const grupos = new Map()
+
+  for (const base of basesExibidas.value) {
+    for (const grupo of base.grupos || []) {
+      const atual = grupos.get(grupo.rotulo) || {
+        rotulo: grupo.rotulo,
+        tipo: grupo.tipo,
+        folguista: grupo.folguista,
+        equipes: 0,
+        vagas: 0,
+        funcoes: new Map()
+      }
+
+      atual.equipes += grupo.equipes || 0
+      atual.vagas += grupo.vagas || 0
+
+      for (const linha of grupo.funcoes || []) {
+        const funcaoAtual = atual.funcoes.get(linha.funcao) || {
+          funcao: linha.funcao,
+          vagas: 0,
+          alocados: 0,
+          diferenca: 0
+        }
+
+        funcaoAtual.vagas += linha.vagas || 0
+        funcaoAtual.alocados += linha.alocados || 0
+        funcaoAtual.diferenca += linha.diferenca || 0
+
+        atual.funcoes.set(linha.funcao, funcaoAtual)
+      }
+
+      grupos.set(grupo.rotulo, atual)
+    }
+  }
+
+  return [...grupos.values()]
+    .map(grupo => ({
+      ...grupo,
+      funcoes: [...grupo.funcoes.values()].sort(
+        (a, b) => ordemFuncaoIndice(a.funcao) - ordemFuncaoIndice(b.funcao)
+      )
+    }))
+    .sort((a, b) => {
+      if (a.folguista !== b.folguista) {
+        return a.folguista ? 1 : -1
+      }
+      return a.rotulo.localeCompare(b.rotulo, 'pt-BR')
+    })
 })
 
 // a cor identifica a disciplina de forma consistente entre chips e cards
@@ -1128,7 +1225,10 @@ const necessidadeTitulo = computed(() => {
 })
 
 const pessoasDisponiveisFiltradas = computed(() => {
-  if (!baseSelecionada.value.length) {
+  if (
+    !baseSelecionada.value.length ||
+    baseSelecionada.value.includes(OPCAO_TODAS_BASES)
+  ) {
     return pessoasDisponiveis.value
   }
 
@@ -1333,34 +1433,39 @@ onMounted(async () => {
       localStorage.getItem(CHAVE_BASES_SELECIONADAS) || '[]'
     )
 
-    if (!Array.isArray(filtroSalvo)) {
-      return
+    if (Array.isArray(filtroSalvo)) {
+      if (filtroSalvo.length === 0) {
+        baseSelecionada.value = [OPCAO_TODAS_BASES]
+      } else {
+        const basesExistentes = opcoesBases.value.map(opcao => opcao.value)
+        const validas = filtroSalvo.filter(
+          base => basesExistentes.includes(base) || base === OPCAO_TODAS_BASES
+        )
+        baseSelecionada.value = validas.length
+          ? normalizarSelecaoBases(validas)
+          : [OPCAO_TODAS_BASES]
+      }
+    } else {
+      baseSelecionada.value = [OPCAO_TODAS_BASES]
     }
-
-    // Nesta tela "todas as bases" é o mesmo que nenhuma marcada. As outras
-    // telas gravam a opção explícita, então ela é aceita na leitura.
-    if (filtroSalvo.includes(OPCAO_TODAS_BASES)) {
-      baseSelecionada.value = []
-      return
-    }
-
-    const basesExistentes = new Set(opcoesBases.value.map(opcao => opcao.value))
-
-    baseSelecionada.value = filtroSalvo.filter(base => basesExistentes.has(base))
   } catch {
-    baseSelecionada.value = []
+    baseSelecionada.value = [OPCAO_TODAS_BASES]
   }
 })
 
 watch(
   baseSelecionada,
   selecao => {
+    const basesNormalizadas = normalizarSelecaoBases(selecao)
+
+    if (JSON.stringify(basesNormalizadas) !== JSON.stringify(selecao)) {
+      baseSelecionada.value = basesNormalizadas
+      return
+    }
+
     // grava no formato que as outras telas leem, para a seleção continuar
     // valendo ao trocar de aba
-    localStorage.setItem(
-      CHAVE_BASES_SELECIONADAS,
-      JSON.stringify(selecao.length ? selecao : [OPCAO_TODAS_BASES])
-    )
+    localStorage.setItem(CHAVE_BASES_SELECIONADAS, JSON.stringify(selecao))
   },
   { deep: true }
 )

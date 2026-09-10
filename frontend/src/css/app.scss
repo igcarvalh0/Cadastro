@@ -338,6 +338,112 @@ body {
 }
 
 // ============================================================
+// BARRA DE FILTROS
+// ============================================================
+// Usada nas telas de Resumo, Banco de Dados e Cadastro de Vagas: o mesmo
+// bloco "row de selects" das três, com um visual mais atual — cantos mais
+// arredondados, campos com contorno suave e um realce de foco na cor da
+// marca em vez do contorno quadrado padrão do Quasar.
+//
+// Duas classes, propósitos diferentes:
+// - .filtros-campos: só o estilo dos CAMPOS (arredondar, focar, ícones).
+//   Aplica em qualquer container — usada quando os filtros são uma seção
+//   dentro de um cartão maior (ex.: "Vagas cadastradas").
+// - .barra-filtros: tudo isso, MAIS o tratamento de cartão inteiro (fundo em
+//   gradiente leve, sombra, acento no topo) — usada quando o cartão existe
+//   só para os filtros (Resumo, Banco de Dados).
+
+.barra-filtros {
+  border-radius: 16px;
+  border: 1px solid var(--linha);
+  background: linear-gradient(165deg, var(--superficie) 0%, var(--superficie-2) 100%);
+  box-shadow: 0 8px 24px rgba(65, 32, 38, 0.07);
+  overflow: hidden;
+  position: relative;
+}
+
+body.body--dark .barra-filtros {
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+}
+
+// tira acento fino no topo, na cor da marca — assina o bloco sem pesar
+.barra-filtros::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--marca) 0%, var(--marca-clara) 60%, transparent 100%);
+  opacity: 0.85;
+}
+
+.barra-filtros .q-field--outlined .q-field__control,
+.filtros-campos .q-field--outlined .q-field__control {
+  border-radius: 12px;
+  background: var(--superficie);
+  transition: box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+.barra-filtros .q-field--outlined .q-field__control:before,
+.filtros-campos .q-field--outlined .q-field__control:before {
+  border-color: var(--linha);
+}
+
+.barra-filtros .q-field--outlined .q-field__control:hover:before,
+.filtros-campos .q-field--outlined .q-field__control:hover:before {
+  border-color: var(--linha-forte);
+}
+
+.barra-filtros .q-field--outlined.q-field--focused .q-field__control,
+.filtros-campos .q-field--outlined.q-field--focused .q-field__control {
+  box-shadow: 0 0 0 3px rgba(113, 20, 36, 0.12);
+}
+
+body.body--dark .barra-filtros .q-field--outlined.q-field--focused .q-field__control,
+body.body--dark .filtros-campos .q-field--outlined.q-field--focused .q-field__control {
+  box-shadow: 0 0 0 3px rgba(224, 138, 156, 0.16);
+}
+
+.barra-filtros .q-field__prepend .q-icon,
+.filtros-campos .q-field__prepend .q-icon {
+  color: var(--marca-clara);
+  opacity: 0.85;
+}
+
+// chips de filtro/indicador: pill cheio, peso maior, sem o quadrado do Quasar
+.barra-filtros .q-chip,
+.filtros-campos .q-chip {
+  border-radius: 999px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.barra-filtros .q-btn-toggle,
+.filtros-campos .q-btn-toggle {
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.barra-filtros .q-btn-toggle .q-btn,
+.filtros-campos .q-btn-toggle .q-btn {
+  border-radius: 0;
+}
+
+// BUG DO TEMA ESCURO: os q-btn-toggle do app (Resumo, Banco de Dados,
+// Cadastro de Vagas) usam color="grey-3"/text-color="grey-8" para o botao
+// NAO selecionado. "grey-3" e uma cor fixa do Quasar que nao muda com o
+// tema (continua clara no escuro); o texto (herda --tinta-fraca, que FICA
+// claro no escuro por .text-grey-8 acima) some sobre esse fundo claro fixo.
+// Sobrescreve so o par bg-grey-3/text-grey-8 DENTRO do toggle para os
+// tokens do tema, sem mexer no q-chip e nos outros usos soltos de grey-3.
+.q-btn-toggle .bg-grey-3 {
+  background: var(--superficie-2) !important;
+}
+
+.q-btn-toggle .text-grey-8 {
+  color: var(--tinta) !important;
+}
+
+// ============================================================
 // TABELAS
 // ============================================================
 

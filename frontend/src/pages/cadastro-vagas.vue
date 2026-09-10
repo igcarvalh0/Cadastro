@@ -228,14 +228,32 @@
         <!-- ================================================== -->
 
         <q-card bordered>
-          <q-card-section class="text-center">
-            <div class="text-h6"> Vagas cadastradas </div>
+          <q-card-section>
+            <div class="row items-center justify-between">
+              <div class="text-h6">
+                {{ modoVagas === 'lista' ? 'Vagas cadastradas' : 'Edição em massa' }}
+              </div>
+
+              <q-btn-toggle
+                v-model="modoVagas"
+                dense
+                no-caps
+                unelevated
+                toggle-color="primary"
+                color="grey-3"
+                text-color="grey-8"
+                :options="[
+                  { label: 'Vagas cadastradas', value: 'lista' },
+                  { label: 'Edição em massa', value: 'massa' }
+                ]"
+              />
+            </div>
           </q-card-section>
 
           <q-separator />
 
           <q-card-section>
-            <div class="row q-col-gutter-md items-center">
+            <div class="row q-col-gutter-md items-center filtros-campos">
               <div class="col-12 col-md-4">
                 <q-select
                   :model-value="baseFiltro"
@@ -249,7 +267,11 @@
                   label="Base"
                   :options="opcoesBaseFiltro"
                   @update:model-value="atualizarSelecaoBaseFiltro"
-                />
+                >
+                  <template #prepend>
+                    <q-icon name="place" size="20px" />
+                  </template>
+                </q-select>
               </div>
 
               <div class="col-12 col-md-3">
@@ -261,7 +283,11 @@
                   map-options
                   label="Tipo"
                   :options="opcoesTipos"
-                />
+                >
+                  <template #prepend>
+                    <q-icon name="category" size="20px" />
+                  </template>
+                </q-select>
               </div>
 
               <div class="col-12 col-md-3">
@@ -273,7 +299,11 @@
                   map-options
                   label="Setor"
                   :options="opcoesSetores"
-                />
+                >
+                  <template #prepend>
+                    <q-icon name="apartment" size="20px" />
+                  </template>
+                </q-select>
               </div>
 
               <div class="col-12 col-md">
@@ -302,7 +332,7 @@
             <q-spinner color="primary" size="50px" />
           </div>
 
-          <q-list v-else separator>
+          <q-list v-else-if="modoVagas === 'lista'" separator>
             <div
               v-if="!equipesFiltradas.length"
               class="text-grey-7 q-pa-md text-center"
@@ -442,6 +472,206 @@
               </q-card>
             </q-expansion-item>
           </q-list>
+
+          <!-- ============================================== -->
+          <!-- EDIÇÃO EM MASSA -->
+          <!-- ============================================== -->
+
+          <q-card-section v-else>
+            <div class="row q-col-gutter-sm items-end q-mb-md">
+              <div class="col-12 col-md-3">
+                <q-select
+                  v-model="bulkSetor"
+                  outlined
+                  dense
+                  clearable
+                  label="Setor (aplicar aos filtrados)"
+                  :options="setoresNegocio"
+                />
+              </div>
+              <div class="col-12 col-md-3">
+                <q-input
+                  v-model="bulkSupervisor"
+                  outlined
+                  dense
+                  label="Supervisor (aplicar aos filtrados)"
+                />
+              </div>
+              <div class="col-12 col-md-3">
+                <q-input
+                  v-model="bulkCoordenador"
+                  outlined
+                  dense
+                  label="Coordenador (aplicar aos filtrados)"
+                />
+              </div>
+              <div class="col-12 col-md-auto">
+                <q-btn
+                  outline
+                  color="primary"
+                  label="Aplicar às equipes filtradas"
+                  :disable="!equipesFiltradas.length"
+                  @click="aplicarCamposEmMassa"
+                />
+              </div>
+            </div>
+
+            <div
+              v-if="!equipesFiltradas.length"
+              class="text-grey-7 q-pa-md text-center"
+            >
+              Nenhuma equipe encontrada para os filtros atuais.
+            </div>
+
+            <q-card
+              v-for="equipe in equipesFiltradas"
+              :key="equipe.id"
+              flat
+              bordered
+              class="q-mb-sm"
+            >
+              <q-card-section>
+                <div class="row q-col-gutter-sm items-center">
+                  <div class="col-12 col-md-2">
+                    <div class="text-weight-medium">
+                      {{ equipe.prefixo || 'Equipe' }}
+                    </div>
+                    <div class="text-caption text-grey-7">
+                      {{ equipe.vagas.length }} vaga(s)
+                    </div>
+                  </div>
+
+                  <div class="col-6 col-md-2">
+                    <q-input
+                      v-model="obterLinhaMassa(equipe).base"
+                      dense
+                      outlined
+                      label="Base"
+                    />
+                  </div>
+
+                  <div class="col-6 col-md-2">
+                    <q-select
+                      v-model="obterLinhaMassa(equipe).setor"
+                      dense
+                      outlined
+                      clearable
+                      label="Setor"
+                      :options="setoresNegocio"
+                    />
+                  </div>
+
+                  <div class="col-6 col-md-2">
+                    <q-input
+                      v-model="obterLinhaMassa(equipe).supervisor"
+                      dense
+                      outlined
+                      label="Supervisor"
+                    />
+                  </div>
+
+                  <div class="col-6 col-md-2">
+                    <q-input
+                      v-model="obterLinhaMassa(equipe).coordenador"
+                      dense
+                      outlined
+                      label="Coordenador"
+                    />
+                  </div>
+
+                  <div class="col-12 col-md-auto">
+                    <q-btn
+                      flat
+                      dense
+                      no-caps
+                      icon="tune"
+                      color="primary"
+                      :label="obterLinhaMassa(equipe).mostrarVagas ? 'Ocultar vagas' : 'Vagas por função'"
+                      @click="obterLinhaMassa(equipe).mostrarVagas = !obterLinhaMassa(equipe).mostrarVagas"
+                    />
+                  </div>
+                </div>
+
+                <div
+                  v-if="obterLinhaMassa(equipe).mostrarVagas"
+                  class="q-mt-sm q-gutter-sm"
+                >
+                  <q-separator />
+
+                  <div
+                    v-for="(linha, indice) in obterLinhaMassa(equipe).vagas"
+                    :key="indice"
+                    class="row q-col-gutter-sm items-center"
+                  >
+                    <div class="col-4">
+                      <q-select
+                        v-model="linha.tipo"
+                        dense
+                        outlined
+                        use-input
+                        new-value-mode="add-unique"
+                        label="Tipo"
+                        :options="estruturasDisponiveis"
+                      />
+                    </div>
+                    <div class="col-4">
+                      <q-select
+                        v-model="linha.funcao"
+                        dense
+                        outlined
+                        label="Função"
+                        :options="FUNCOES_SISTEMA"
+                      />
+                    </div>
+                    <div class="col-3">
+                      <q-input
+                        v-model.number="linha.quantidade"
+                        dense
+                        outlined
+                        type="number"
+                        min="0"
+                        label="Qtd."
+                      />
+                    </div>
+                    <div class="col-1">
+                      <q-btn
+                        flat
+                        round
+                        dense
+                        icon="delete"
+                        color="negative"
+                        @click="obterLinhaMassa(equipe).vagas.splice(indice, 1)"
+                      />
+                    </div>
+                  </div>
+
+                  <q-btn
+                    flat
+                    dense
+                    icon="add"
+                    label="Adicionar linha"
+                    color="primary"
+                    @click="
+                      obterLinhaMassa(equipe).vagas.push({
+                        tipo: 'CONSTRUÇÃO',
+                        funcao: null,
+                        quantidade: 0
+                      })
+                    "
+                  />
+                </div>
+              </q-card-section>
+            </q-card>
+
+            <div v-if="equipesFiltradas.length" class="row justify-end q-mt-md">
+              <q-btn
+                color="primary"
+                label="Salvar edição em massa"
+                :loading="salvandoMassa"
+                @click="salvarEdicaoMassa"
+              />
+            </div>
+          </q-card-section>
         </q-card>
       </q-page>
     </q-page-container>
@@ -781,6 +1011,15 @@ const setoresNegocio = ref([])
 
 const basesFiltradas = ref([])
 const equipesOpcoesFiltradas = ref([])
+
+// alterna entre a lista de vagas cadastradas e a grade de edição em massa,
+// para nao deixar as duas visiveis e a tela pesada ao mesmo tempo
+const modoVagas = ref('massa')
+const edicaoMassa = ref({})
+const salvandoMassa = ref(false)
+const bulkSetor = ref(null)
+const bulkSupervisor = ref('')
+const bulkCoordenador = ref('')
 
 // ============================================================
 // DERIVADOS
@@ -1254,6 +1493,174 @@ async function salvarEdicaoEquipe(confirmarRemocoesIds = null) {
     erro.value = e.message || 'Erro ao atualizar a equipe.'
   } finally {
     salvandoEdicao.value = false
+  }
+}
+
+// ============================================================
+// EDIÇÃO EM MASSA (várias equipes de uma vez, sem planilha)
+// ============================================================
+
+function linhaEdicaoMassa(equipe) {
+  const vagasPadrao = (equipe.vagas || []).filter(vaga => !vaga.eh_extra)
+
+  const agrupado = new Map()
+  for (const vaga of vagasPadrao) {
+    const chave = `${vaga.tipo}|${vaga.funcao_er}`
+    agrupado.set(chave, (agrupado.get(chave) || 0) + 1)
+  }
+
+  return {
+    base: equipe.base,
+    prefixo: equipe.prefixo,
+    setor: vagasPadrao.find(vaga => vaga.setor)?.setor || null,
+    supervisor: vagasPadrao.find(vaga => vaga.supervisor)?.supervisor || '',
+    coordenador: vagasPadrao.find(vaga => vaga.coordenador)?.coordenador || '',
+    vagas: [...agrupado.entries()].map(([chave, quantidade]) => {
+      const [tipo, funcao] = chave.split('|')
+      return { tipo, funcao, quantidade }
+    }),
+    mostrarVagas: false
+  }
+}
+
+// inicializa a linha de edicao da equipe na primeira vez que ela aparece na
+// grade, e devolve sempre a MESMA referencia depois — assim os campos que o
+// usuario ja editou nao sao perdidos quando o filtro muda a lista
+function obterLinhaMassa(equipe) {
+  if (!edicaoMassa.value[equipe.id]) {
+    edicaoMassa.value[equipe.id] = linhaEdicaoMassa(equipe)
+  }
+  return edicaoMassa.value[equipe.id]
+}
+
+function aplicarCamposEmMassa() {
+  for (const equipe of equipesFiltradas.value) {
+    const linha = obterLinhaMassa(equipe)
+    if (bulkSetor.value !== null) {
+      linha.setor = bulkSetor.value
+    }
+    if (bulkSupervisor.value.trim()) {
+      linha.supervisor = bulkSupervisor.value
+    }
+    if (bulkCoordenador.value.trim()) {
+      linha.coordenador = bulkCoordenador.value
+    }
+  }
+}
+
+// mesma regra de calcularConflitosReducao, mas para uma equipe qualquer da
+// grade em massa, nao so a que esta no dialog de edicao individual
+function calcularConflitosReducaoEquipe(equipe, linha) {
+  const vagasPadrao = (equipe.vagas || []).filter(vaga => !vaga.eh_extra)
+  const porChave = new Map()
+
+  for (const vaga of vagasPadrao) {
+    const chave = `${vaga.tipo}|${vaga.funcao_er}`
+    if (!porChave.has(chave)) {
+      porChave.set(chave, [])
+    }
+    porChave.get(chave).push(vaga)
+  }
+
+  const conflitos = []
+
+  for (const l of linha.vagas) {
+    const chave = `${l.tipo}|${l.funcao}`
+    const vagas = porChave.get(chave) || []
+    const livres = vagas.filter(vaga => !vaga.colaborador)
+    const ocupadas = vagas.filter(vaga => vaga.colaborador)
+    const reducao = vagas.length - Number(l.quantidade || 0)
+
+    if (reducao > livres.length) {
+      const precisaRemover = reducao - livres.length
+      conflitos.push(...ocupadas.slice(0, precisaRemover))
+    }
+  }
+
+  return conflitos
+}
+
+async function salvarEdicaoMassa() {
+  erro.value = ''
+  sucesso.value = ''
+
+  const conflitosPorEquipe = new Map()
+  for (const equipe of equipesFiltradas.value) {
+    const linha = obterLinhaMassa(equipe)
+    const conflitos = calcularConflitosReducaoEquipe(equipe, linha)
+    if (conflitos.length) {
+      conflitosPorEquipe.set(equipe.id, conflitos)
+    }
+  }
+
+  if (conflitosPorEquipe.size) {
+    const detalhe = [...conflitosPorEquipe.entries()]
+      .map(([id, vagas]) => {
+        const equipe = equipesFiltradas.value.find(e => e.id === id)
+        return (
+          `${equipe?.prefixo}: ` +
+          vagas.map(v => `${v.colaborador?.chapa} - ${v.colaborador?.nome}`).join(', ')
+        )
+      })
+      .join('\n')
+
+    if (
+      !window.confirm(
+        'Reduzir a quantidade de vagas vai remover colaborador(es) já alocado(s):\n\n' +
+          `${detalhe}\n\n` +
+          'Confirma a remoção desses colaboradores em todas as equipes listadas?'
+      )
+    ) {
+      return
+    }
+  }
+
+  salvandoMassa.value = true
+
+  try {
+    const equipesPayload = equipesFiltradas.value.map(equipe => {
+      const linha = obterLinhaMassa(equipe)
+      return {
+        equipe_id: equipe.id,
+        base: linha.base,
+        prefixo: linha.prefixo,
+        setor: linha.setor,
+        supervisor: linha.supervisor,
+        coordenador: linha.coordenador,
+        vagas: linha.vagas.filter(v => v.funcao),
+        confirmar_remocoes: (conflitosPorEquipe.get(equipe.id) || []).map(v => v.id)
+      }
+    })
+
+    const resposta = await fetch('/api/equipes/edicao-massa', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ equipes: equipesPayload })
+    })
+
+    const dados = await resposta.json()
+
+    if (!resposta.ok || dados.erro) {
+      if (dados.erros?.length) {
+        erro.value =
+          `${dados.erro} ` +
+          dados.erros.map(e => `${e.equipe}: ${e.erro}`).join(' | ')
+      } else {
+        throw new Error(dados.erro || 'Erro ao salvar a edição em massa.')
+      }
+      return
+    }
+
+    sucesso.value = `${dados.equipes_editadas} equipe(s) atualizada(s) com sucesso.`
+    edicaoMassa.value = {}
+
+    await carregarEquipes()
+  } catch (e) {
+    erro.value = e.message || 'Erro ao salvar a edição em massa.'
+  } finally {
+    salvandoMassa.value = false
   }
 }
 
