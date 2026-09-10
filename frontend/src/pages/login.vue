@@ -8,7 +8,7 @@
 
         <q-toolbar-title>
           <div class="cabecalho-login__titulo">Gerenciador de Equipes</div>
-          <div class="cabecalho-login__subtitulo">Setor de Medição · CGB Energia</div>
+          <div class="cabecalho-login__subtitulo"> CGB Energia</div>
         </q-toolbar-title>
 
         <div
@@ -60,12 +60,12 @@
 
             <h1 class="titulo-hero">
               Gestão de<br />
-              <span class="titulo-hero__destaque">Equipes de Campo</span>
+              <span class="titulo-hero__destaque">Equipes            
+              </span>
             </h1>
 
             <p class="texto-hero">
-              Acompanhe alocações, vagas e o resumo operacional das equipes do
-              setor de medição em um só lugar.
+              Acompanhe alocações, vagas e o resumo operacional das equipes em um só lugar.
             </p>
           </div>
 
@@ -157,7 +157,7 @@
                   type="submit"
                   color="primary"
                   class="full-width botao-entrar"
-                  label="Entrar no sistema"
+                  label="LOGIN"
                   icon-right="arrow_forward"
                   :loading="entrando"
                   :disable="!login || !senha"
@@ -170,7 +170,7 @@
               <div v-else class="q-gutter-md">
                 <p class="text-body2 text-grey-8">
                   Ainda não existe redefinição automática por e-mail neste
-                  sistema. Procure o administrador (nível Mestre) do
+                  sistema. Procure o Administrador do
                   Gerenciador de Equipes para redefinir a sua senha.
                 </p>
 
@@ -221,7 +221,7 @@
 
             <q-card-section class="text-body2">
               Para dúvidas de acesso, senha ou vínculo com sua equipe, procure
-              o administrador do sistema (nível Mestre) no setor de medição.
+              o Administrador do sistema no setor de medição.
             </q-card-section>
 
             <q-card-actions align="right">
@@ -695,7 +695,7 @@ onBeforeUnmount(() => {
 .titulo-hero {
   font-family: 'Inter', var(--fonte-ui);
   font-weight: 800;
-  font-size: 2.2rem;
+  font-size: 3.8rem;
   line-height: 1.15;
   letter-spacing: -0.01em;
   color: var(--titulo);
@@ -703,6 +703,7 @@ onBeforeUnmount(() => {
 }
 
 .titulo-hero__destaque {
+  white-space: nowrap;
   background: linear-gradient(90deg, var(--marca) 0%, var(--marca-clara) 60%, #e57c94 100%);
   -webkit-background-clip: text;
   background-clip: text;

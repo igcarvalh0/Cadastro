@@ -57,7 +57,7 @@ Toda a API exige login. Para criar o primeiro usuario (ou recuperar o acesso,
 se ninguem mais conseguir entrar):
 
 ```powershell
-.\.venv\Scripts\python.exe -m database.criar_usuario_mestre
+.\.venv\Scripts\python.exe -m database.criar_usuario_administrador
 ```
 
 A senha e pedida sem aparecer na tela e vai para o banco apenas como hash
@@ -69,13 +69,17 @@ A senha e pedida sem aparecer na tela e vai para o banco apenas como hash
   e o unico lugar a mexer para criar ou alterar um nivel. A tela de usuarios le
   essa tabela, entao um nivel novo aparece no formulario sozinho.
 - Os **vinculos** dizem sobre quais equipes ela age (base, tipo de equipe,
-  setor, supervisor, coordenador). Sem nenhum vinculo, a pessoa alcanca todas
-  as equipes.
-- `MESTRE` tem todas as permissoes e ignora vinculos.
+  setor, supervisor, coordenador, equipe especifica, operacao liberada). Sem
+  nenhum vinculo, a pessoa alcanca todas as equipes.
+- `ADMINISTRADOR` tem todas as permissoes e ignora vinculos (nivel antigo
+  "MESTRE", renomeado — ver migration 006).
 - `SUPERVISOR` ve o resumo e as equipes inteiros, mas so aloca ou remove
   colaborador nas vagas cuja base **e** cujo tipo de equipe estejam nos
   vinculos dele (as duas coisas ao mesmo tempo). A checagem fica em
   `auth.pode_atuar_na_base_e_tipo`.
+- `ANALISTA` so aloca, edita ou remove dentro do escopo (equipe especifica,
+  base+tipo, ou setor) e das operacoes liberadas pelo Administrador (vinculo
+  `OPERACAO`). A checagem fica em `auth.pode_realizar_operacao`.
 
 `SECRET_KEY` no `.env` assina o cookie de sessao. Trocar esse valor desloga
 todo mundo; nao ter o valor faz as sessoes cairem a cada reinicio do servidor.

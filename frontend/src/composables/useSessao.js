@@ -5,6 +5,7 @@ import { computed, ref } from 'vue'
 const usuario = ref(null)
 const niveis = ref([])
 const tiposVinculo = ref({})
+const setoresNegocio = ref([])
 const carregada = ref(false)
 
 let carregamentoEmAndamento = null
@@ -16,6 +17,7 @@ async function buscarSessao() {
   usuario.value = dados.autenticado ? dados.usuario : null
   niveis.value = dados.niveis || []
   tiposVinculo.value = dados.tipos_vinculo || {}
+  setoresNegocio.value = dados.setores_negocio || []
   carregada.value = true
 
   return usuario.value
@@ -78,6 +80,7 @@ export function useSessao() {
     usuario,
     niveis,
     tiposVinculo,
+    setoresNegocio,
     autenticado: computed(() => Boolean(usuario.value)),
     temPermissao: permissao =>
       Boolean(usuario.value?.permissoes?.includes(permissao)),
@@ -93,5 +96,8 @@ export function useSessao() {
 export const PODE_VER_RESUMO = 'ver_resumo'
 export const PODE_VER_EQUIPES = 'ver_equipes'
 export const PODE_ALOCAR = 'alocar'
+export const PODE_EDITAR_ALOCACAO = 'editar_alocacao'
+export const PODE_REMOVER_ALOCACAO = 'remover_alocacao'
 export const PODE_GERENCIAR_VAGAS = 'gerenciar_vagas'
 export const PODE_GERENCIAR_USUARIOS = 'gerenciar_usuarios'
+export const PODE_GERENCIAR_COLABORADORES = 'gerenciar_colaboradores'

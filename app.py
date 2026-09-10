@@ -23,6 +23,7 @@ from sqlalchemy.orm import joinedload
 import auth
 from auth import exige_permissao
 from database.database import SessionLocal
+from database.importacao.importar_colaboradores import processar_planilha_colaboradores
 from database.models import (
     Colaborador,
     ComposicaoEquipe,
@@ -282,7 +283,7 @@ def entrar():
             return jsonify({"erro": "Este usuário está desativado."}), 403
 
         usuario.ULTIMO_ACESSO = datetime.now(timezone.utc)
-        dados_usuario = auth.descrever_usuario(usuario)
+        dados_usuario = auth.descrever_usuario(usuario, session=session)
         session.commit()
 
         auth.registrar_login(usuario)
@@ -308,25 +309,61 @@ def obter_sessao():
     está, para a tela decidir se mostra o login sem tratar isso como erro."""
     usuario = auth.usuario_logado()
 
+    session = SessionLocal()
+    try:
+        niveis = niveis_para_tela(session)
+    finally:
+        session.close()
+
     return jsonify({
         "autenticado": bool(usuario),
         "usuario": usuario,
-        "niveis": niveis_para_tela(),
+        "niveis": niveis,
         "tipos_vinculo": auth.TIPOS_VINCULO,
+        "setores_negocio": list(SETORES_NEGOCIO),
     })
 
 
-def niveis_para_tela():
+def niveis_para_tela(session=None):
     return [
         {
             "valor": nome,
             "rotulo": dados["rotulo"],
             "descricao": dados["descricao"],
-            "permissoes": sorted(dados["permissoes"]),
+            "permissoes": sorted(auth.permissoes_do_nivel(nome, session)),
             "ignora_vinculos": bool(dados.get("ignora_vinculos", False)),
+            "personalizavel": nome not in auth.NIVEIS_PERMISSOES_FIXAS,
         }
         for nome, dados in auth.NIVEIS.items()
     ]
+
+
+@app.route("/api/niveis/<nivel>/permissoes", methods=["PUT"])
+@exige_permissao(auth.GERENCIAR_USUARIOS)
+def atualizar_permissoes_nivel(nivel):
+    dados = request.get_json()
+    if not dados:
+        return jsonify({"erro": "Dados não enviados."}), 400
+
+    permissoes = dados.get("permissoes")
+    if not isinstance(permissoes, list):
+        return jsonify({"erro": "Lista de permissões inválida."}), 400
+
+    session = SessionLocal()
+    try:
+        auth.substituir_permissoes_nivel(session, nivel.upper(), permissoes)
+        session.commit()
+
+        return jsonify({"sucesso": True, "niveis": niveis_para_tela(session)})
+    except ValueError as erro:
+        session.rollback()
+        return jsonify({"erro": str(erro)}), 400
+    except Exception as erro:
+        session.rollback()
+        print(f"[ERRO] atualizar_permissoes_nivel: {erro}")
+        return jsonify({"erro": "Não foi possível atualizar as permissões."}), 500
+    finally:
+        session.close()
 
 
 # ============================================================
@@ -354,6 +391,7 @@ def obter_resumo():
     try:
         filtro_base = request.args.get("base", "").strip()
         filtro_tipo = request.args.get("tipo", "").strip()
+        filtro_setor = request.args.get("setor", "").strip()
 
         equipes = (
             session.query(Equipe)
@@ -419,6 +457,9 @@ def obter_resumo():
                     elif normalizar(tipo) != normalizar(filtro_tipo):
                         continue
 
+                if filtro_setor and normalizar(composicao.SETOR or "") != normalizar(filtro_setor):
+                    continue
+
                 funcao_exibicao = padronizar_funcao(composicao.FUNÇÃO_ER)
                 if not funcao_exibicao:
                     continue
@@ -433,13 +474,17 @@ def obter_resumo():
                 grupo["prefixos"].add(prefixo)
 
                 registro = grupo["funcoes"].setdefault(
-                    funcao_exibicao, {"vagas": 0, "alocados": 0}
+                    funcao_exibicao, {"vagas": 0, "alocados": 0, "extra": 0}
                 )
-                registro["vagas"] += 1
+                vaga_extra = eh_extra(composicao)
+                if not vaga_extra:
+                    registro["vagas"] += 1
 
                 if composicao.membro and composicao.membro.colaborador:
                     colaborador = composicao.membro.colaborador
                     registro["alocados"] += 1
+                    if vaga_extra:
+                        registro["extra"] += 1
 
                     funcao_colab = padronizar_funcao(colaborador.FUNÇÃO)
                     if funcao_colab in ORDEM_FUNCOES:
@@ -471,7 +516,8 @@ def obter_resumo():
                         "funcao": funcao,
                         "vagas": dados["vagas"],
                         "alocados": dados["alocados"],
-                        "diferenca": dados["alocados"] - dados["vagas"],
+                        "extra": dados.get("extra", 0),
+                        "diferenca": dados["alocados"] - dados["vagas"] - dados.get("extra", 0),
                     }
                     for funcao, dados in sorted(
                         dados_grupo["funcoes"].items(),
@@ -481,6 +527,7 @@ def obter_resumo():
 
                 vagas = sum(f["vagas"] for f in funcoes)
                 alocados = sum(f["alocados"] for f in funcoes)
+                extra = sum(f["extra"] for f in funcoes)
 
                 grupos.append({
                     "tipo": chave,
@@ -490,7 +537,8 @@ def obter_resumo():
                     "funcoes": funcoes,
                     "vagas": vagas,
                     "alocados": alocados,
-                    "diferenca": alocados - vagas,
+                    "extra": extra,
+                    "diferenca": alocados - vagas - extra,
                 })
 
             # com filtro de tipo, a base so aparece se tiver aquele tipo:
@@ -505,6 +553,7 @@ def obter_resumo():
                 "equipes": sum(g["equipes"] for g in grupos),
                 "vagas": sum(g["vagas"] for g in grupos),
                 "alocados": sum(g["alocados"] for g in grupos),
+                "extra": sum(g["extra"] for g in grupos),
             })
 
         resultado.sort(key=lambda item: item["base"])
@@ -524,18 +573,22 @@ def obter_resumo():
                     "equipes": 0,
                     "vagas": 0,
                     "alocados": 0,
+                    "extra": 0,
                 })
                 acumulado["equipes"] += grupo["equipes"]
                 acumulado["vagas"] += grupo["vagas"]
                 acumulado["alocados"] += grupo["alocados"]
+                acumulado["extra"] += grupo["extra"]
 
         grupos_totais = [
-            {**dados, "diferenca": dados["alocados"] - dados["vagas"]}
+            {**dados, "diferenca": dados["alocados"] - dados["vagas"] - dados["extra"]}
             for dados in sorted(
                 totais_por_grupo.values(),
                 key=lambda d: (d["tipo"], d["folguista"]),
             )
         ]
+
+        total_extra = sum(item["extra"] for item in resultado)
 
         total = {
             "base": "TOTAL",
@@ -543,7 +596,8 @@ def obter_resumo():
             "equipes": sum(g["equipes"] for g in grupos_totais),
             "vagas": total_vagas,
             "alocados": total_alocados,
-            "diferenca": total_alocados - total_vagas,
+            "extra": total_extra,
+            "diferenca": total_alocados - total_vagas - total_extra,
         }
 
         lista_disponiveis = [
@@ -587,6 +641,8 @@ def obter_resumo():
             "base_selecionada": filtro_base,
             "tipos_filtro": sorted(tipos_existentes),
             "tipo_selecionado": filtro_tipo,
+            "setores_filtro": list(SETORES_NEGOCIO),
+            "setor_selecionado": filtro_setor,
             "pessoas_disponiveis": lista_disponiveis,
             "nao_alocados_por_base": list(nao_alocados.values()),
         })
@@ -684,6 +740,7 @@ def obter_equipes():
                     "setor": composicao.SETOR or "",
                     "supervisor": composicao.SUPERVISOR or "",
                     "coordenador": composicao.COORDENADOR or "",
+                    "eh_extra": eh_extra(composicao),
                     "ocupada": colaborador is not None,
                     "colaborador": {
                         "chapa": str(colaborador.CHAPA),
@@ -786,7 +843,12 @@ def atualizar_equipe(equipe_id):
 
     session = SessionLocal()
     try:
-        equipe = session.query(Equipe).filter(Equipe.id == equipe_id).first()
+        equipe = (
+            session.query(Equipe)
+            .options(joinedload(Equipe.composicoes).joinedload(ComposicaoEquipe.membro))
+            .filter(Equipe.id == equipe_id)
+            .first()
+        )
         if not equipe:
             return jsonify({"erro": "Equipe não encontrada."}), 404
 
@@ -804,6 +866,70 @@ def atualizar_equipe(equipe_id):
 
         equipe.BASE = base
         equipe.PREFIXO = prefixo
+
+        # edicao completa (opcional): setor/supervisor/coordenador propagados
+        # para TODAS as vagas padrao da equipe, e quantidade de vagas por
+        # (tipo, funcao) reaproveitando o mesmo motor de diff da planilha.
+        if "vagas" in dados:
+            confirmar_remocoes = dados.get("confirmar_remocoes") or []
+            for composicao_id in confirmar_remocoes:
+                composicao = next(
+                    (c for c in equipe.composicoes if c.id == composicao_id), None
+                )
+                if composicao and composicao.membro:
+                    session.delete(composicao.membro)
+            if confirmar_remocoes:
+                session.flush()
+                session.refresh(equipe)
+
+            setor = str(dados.get("setor", "")).strip() or None
+            supervisor = str(dados.get("supervisor", "")).strip() or None
+            coordenador = str(dados.get("coordenador", "")).strip() or None
+
+            por_tipo = {}
+            for vaga in dados.get("vagas") or []:
+                tipo = str(vaga.get("tipo", "")).strip().upper() or TIPO_EQUIPE_PADRAO
+                funcao = str(vaga.get("funcao", "")).strip()
+                quantidade = int(vaga.get("quantidade") or 0)
+                if not funcao or quantidade < 0:
+                    continue
+                por_tipo.setdefault(tipo, {})[funcao] = quantidade
+
+            funcoes = sorted({f for vagas in por_tipo.values() for f in vagas})
+            if not por_tipo or not funcoes:
+                return jsonify({"erro": "Informe ao menos uma vaga."}), 400
+
+            linhas = []
+            for tipo, vagas_tipo in por_tipo.items():
+                linha = {
+                    "BASE": equipe.BASE,
+                    "PREFIXO": equipe.PREFIXO,
+                    COLUNA_TIPO_EQUIPE: tipo,
+                    COLUNA_SETOR: setor or "",
+                    COLUNA_SUPERVISOR: supervisor or "",
+                    COLUNA_COORDENADOR: coordenador or "",
+                    "AÇÃO": "editar",
+                }
+                for funcao in funcoes:
+                    linha[funcao] = vagas_tipo.get(funcao, 0)
+                linhas.append(linha)
+
+            df = pd.DataFrame(linhas, columns=list(COLUNAS_FIXAS_PLANILHA) + funcoes)
+            buffer = io.BytesIO()
+            df.to_excel(buffer, index=False)
+            buffer.seek(0)
+
+            plano = analisar_planilha_equipes(buffer, session)
+            if plano["erros"]:
+                return jsonify({
+                    "erro": "Não foi possível aplicar as mudanças.",
+                    "erros": plano["erros"],
+                }), 400
+
+            for item in plano["editar"]:
+                if item["equipe_id"] == equipe.id:
+                    aplicar_mudancas_equipe(session, equipe.id, item["mudancas"])
+
         session.commit()
 
         return jsonify({
@@ -827,11 +953,11 @@ def remover_todas_alocacoes():
     """Libera todas as vagas do sistema de uma vez. As vagas continuam
     cadastradas: some so o vinculo com o colaborador.
 
-    So o nivel que ignora vinculos (MESTRE) pode: e uma acao sem escopo de
-    base/tipo, entao um supervisor restrito nao pode disparar por aqui."""
+    So o nivel que ignora vinculos (ADMINISTRADOR) pode: e uma acao sem escopo
+    de base/tipo, entao um supervisor restrito nao pode disparar por aqui."""
     if not (auth.usuario_logado() or {}).get("ignora_vinculos"):
         return jsonify({
-            "erro": "Apenas o nível mestre pode remover todas as alocações de uma vez."
+            "erro": "Apenas o Administrador pode remover todas as alocações de uma vez."
         }), 403
 
     session = SessionLocal()
@@ -853,7 +979,7 @@ def remover_todas_alocacoes():
 
 
 @app.route("/api/equipes/<int:equipe_id>/membros", methods=["DELETE"])
-@exige_permissao(auth.ALOCAR)
+@exige_permissao(auth.VER_EQUIPES)
 def remover_membros_equipe(equipe_id):
     session = SessionLocal()
     try:
@@ -866,8 +992,10 @@ def remover_membros_equipe(equipe_id):
             composicao.membro
             for composicao in equipe.composicoes
             if composicao.membro
-            and auth.pode_atuar_na_base_e_tipo(
-                usuario, equipe.BASE, tipo_equipe_da_vaga(composicao)
+            and auth.pode_realizar_operacao(
+                usuario, auth.OPERACAO_REMOVER, equipe.BASE,
+                tipo_equipe_da_vaga(composicao),
+                equipe_id=equipe.id, setor=composicao.SETOR,
             )
         ]
 
@@ -936,10 +1064,25 @@ ACOES_PLANILHA = ("criar", "editar", "excluir")
 
 TIPO_EQUIPE_PADRAO = "CONSTRUÇÃO"
 
+# Origem de uma vaga (ComposicaoEquipe.ORIGEM). PADRAO/None e a maioria das
+# vagas, geridas pela planilha de equipes. EXTRA e o Folguista Extra: uma
+# vaga criada a parte, que nao entra na contagem de vagas padrao da equipe.
+ORIGEM_PADRAO = "PADRAO"
+ORIGEM_EXTRA = "EXTRA"
+
+# Setores de negocio disponiveis para filtro/cadastro (item novo, reaproveita
+# ComposicaoEquipe.SETOR, mas com valores fixos em vez de texto livre).
+SETORES_NEGOCIO = ("GSTC", "GOMAN")
+
 
 def eh_folguista(prefixo):
     """Folguista continua sendo indicado pelo prefixo, nao pelo tipo."""
     return normalizar(prefixo) == "FOLGUISTA"
+
+
+def eh_extra(composicao):
+    """Vaga de Folguista Extra: nao conta como vaga padrao da equipe."""
+    return normalizar(getattr(composicao, "ORIGEM", None) or "") == ORIGEM_EXTRA
 
 
 def tipo_equipe_da_vaga(composicao):
@@ -998,6 +1141,8 @@ def montar_planilha_equipes(session):
         por_tipo = {}
         metadados_por_tipo = {}
         for composicao in (equipe.composicoes or []):
+            if eh_extra(composicao):
+                continue
             tipo = tipo_equipe_da_vaga(composicao)
             funcao = str(composicao.FUNÇÃO_ER).strip()
             por_tipo.setdefault(tipo, {})
@@ -1043,6 +1188,47 @@ def texto_da_celula(valor):
 def texto_ou_none(valor):
     texto = texto_da_celula(valor)
     return texto or None
+
+
+def aplicar_mudancas_equipe(session, equipe_id, mudancas):
+    """Aplica a lista de 'mudancas' que analisar_planilha_equipes calcula para
+    uma equipe (plano['editar'][i]['mudancas']). Reaproveitada tanto pela
+    aplicacao da planilha quanto pela edicao individual de equipe."""
+    for mudanca in mudancas:
+        if "adicionar" in mudanca:
+            for _ in range(mudanca["adicionar"]):
+                session.add(ComposicaoEquipe(
+                    equipe_id=equipe_id,
+                    FUNÇÃO_ER=mudanca["funcao"],
+                    ESTRUTURA=mudanca["tipo"],
+                    SETOR=mudanca.get("setor"),
+                    SUPERVISOR=mudanca.get("supervisor"),
+                    COORDENADOR=mudanca.get("coordenador"),
+                ))
+            continue
+
+        for composicao_id in mudanca["ids"]:
+            composicao = (
+                session.query(ComposicaoEquipe)
+                .filter(ComposicaoEquipe.id == composicao_id)
+                .first()
+            )
+            if not composicao:
+                continue
+
+            if "retipar" in mudanca:
+                # troca so a disciplina da vaga: id e colaborador ficam,
+                # entao retipar uma vaga ocupada e seguro
+                composicao.ESTRUTURA = mudanca["para"]
+                composicao.SETOR = mudanca.get("setor")
+                composicao.SUPERVISOR = mudanca.get("supervisor")
+                composicao.COORDENADOR = mudanca.get("coordenador")
+            elif "atualizar_metadados" in mudanca:
+                composicao.SETOR = mudanca.get("setor")
+                composicao.SUPERVISOR = mudanca.get("supervisor")
+                composicao.COORDENADOR = mudanca.get("coordenador")
+            elif not composicao.membro:
+                session.delete(composicao)
 
 
 def analisar_planilha_equipes(arquivo, session):
@@ -1177,7 +1363,7 @@ def analisar_planilha_equipes(arquivo, session):
                 continue
             alvo = [
                 c for c in equipe.composicoes
-                if tipo_equipe_da_vaga(c) == l["tipo"]
+                if tipo_equipe_da_vaga(c) == l["tipo"] and not eh_extra(c)
             ]
             if not alvo:
                 registrar_erro(l["numero"], l["rotulo"], f"A equipe não tem vagas de {l['tipo']}.")
@@ -1240,8 +1426,11 @@ def analisar_planilha_equipes(arquivo, session):
             continue
 
         # --- composicao atual da equipe, por (disciplina, funcao) ---
+        # vagas EXTRA (Folguista Extra) ficam fora: nao sao geridas pela planilha.
         atual = {}
         for composicao in equipe.composicoes:
+            if eh_extra(composicao):
+                continue
             chave = (tipo_equipe_da_vaga(composicao), str(composicao.FUNÇÃO_ER).strip())
             atual.setdefault(chave, []).append(composicao)
 
@@ -1508,41 +1697,7 @@ def aplicar_planilha_equipes():
                     ))
 
         for item in plano["editar"]:
-            for mudanca in item["mudancas"]:
-                if "adicionar" in mudanca:
-                    for _ in range(mudanca["adicionar"]):
-                        session.add(ComposicaoEquipe(
-                            equipe_id=item["equipe_id"],
-                            FUNÇÃO_ER=mudanca["funcao"],
-                            ESTRUTURA=mudanca["tipo"],
-                            SETOR=mudanca.get("setor"),
-                            SUPERVISOR=mudanca.get("supervisor"),
-                            COORDENADOR=mudanca.get("coordenador"),
-                        ))
-                    continue
-
-                for composicao_id in mudanca["ids"]:
-                    composicao = (
-                        session.query(ComposicaoEquipe)
-                        .filter(ComposicaoEquipe.id == composicao_id)
-                        .first()
-                    )
-                    if not composicao:
-                        continue
-
-                    if "retipar" in mudanca:
-                        # troca so a disciplina da vaga: id e colaborador ficam,
-                        # entao retipar uma vaga ocupada e seguro
-                        composicao.ESTRUTURA = mudanca["para"]
-                        composicao.SETOR = mudanca.get("setor")
-                        composicao.SUPERVISOR = mudanca.get("supervisor")
-                        composicao.COORDENADOR = mudanca.get("coordenador")
-                    elif "atualizar_metadados" in mudanca:
-                        composicao.SETOR = mudanca.get("setor")
-                        composicao.SUPERVISOR = mudanca.get("supervisor")
-                        composicao.COORDENADOR = mudanca.get("coordenador")
-                    elif not composicao.membro:
-                        session.delete(composicao)
+            aplicar_mudancas_equipe(session, item["equipe_id"], item["mudancas"])
 
         for item in plano["excluir"]:
             equipe = (
@@ -1554,7 +1709,11 @@ def aplicar_planilha_equipes():
                 continue
 
             for composicao in list(equipe.composicoes):
-                if tipo_equipe_da_vaga(composicao) == item["tipo"] and not composicao.membro:
+                if (
+                    tipo_equipe_da_vaga(composicao) == item["tipo"]
+                    and not composicao.membro
+                    and not eh_extra(composicao)
+                ):
                     session.delete(composicao)
 
             if item["apaga_equipe"]:
@@ -1662,6 +1821,489 @@ def remover_vaga(vaga_id):
 
 
 # ============================================================
+# API - PLANILHA DE ALOCAÇÕES (ALOCAR/REMOVER EM MASSA)
+# ============================================================
+#
+# Reaproveita o mesmo padrao previa -> erros -> aplicar da planilha de
+# equipes (montar_planilha_equipes/analisar_planilha_equipes), mas cada
+# linha aqui e uma VAGA (ComposicaoEquipe) existente, nao uma quantidade
+# agregada — porque alocar e remover atuam sobre vagas ja cadastradas, sem
+# criar ou apagar nenhuma.
+
+COLUNA_ALOC_COMPOSICAO_ID = "COMPOSICAO_ID"
+COLUNA_ALOC_CHAPA = "CHAPA"
+COLUNA_ALOC_ACAO = "AÇÃO"
+COLUNAS_FIXAS_PLANILHA_ALOCACOES = (
+    COLUNA_ALOC_COMPOSICAO_ID,
+    "BASE",
+    "PREFIXO",
+    "TIPO EQUIPE",
+    "FUNÇÃO",
+    "SETOR",
+    "CHAPA_ATUAL",
+    "NOME_ATUAL",
+    COLUNA_ALOC_CHAPA,
+    COLUNA_ALOC_ACAO,
+)
+ACOES_PLANILHA_ALOCACOES = ("alocar", "remover", "editar")
+
+OPERACAO_POR_ACAO_ALOCACAO = {
+    "alocar": auth.OPERACAO_ALOCAR,
+    "remover": auth.OPERACAO_REMOVER,
+    "editar": auth.OPERACAO_EDITAR,
+}
+
+
+def montar_planilha_alocacoes(session):
+    """1 linha por vaga (ComposicaoEquipe), com quem ocupa hoje (se alguem) e
+    colunas CHAPA/AÇÃO para o usuario preencher o que quer mudar."""
+    equipes = (
+        session.query(Equipe)
+        .options(
+            joinedload(Equipe.composicoes)
+            .joinedload(ComposicaoEquipe.membro)
+            .joinedload(MembroEquipe.colaborador)
+        )
+        .order_by(Equipe.BASE, Equipe.PREFIXO)
+        .all()
+    )
+
+    linhas = []
+    for equipe in equipes:
+        for composicao in sorted(equipe.composicoes or [], key=lambda c: c.id):
+            colaborador = composicao.membro.colaborador if composicao.membro else None
+            linhas.append({
+                COLUNA_ALOC_COMPOSICAO_ID: composicao.id,
+                "BASE": equipe.BASE,
+                "PREFIXO": equipe.PREFIXO,
+                "TIPO EQUIPE": tipo_equipe_da_vaga(composicao),
+                "FUNÇÃO": composicao.FUNÇÃO_ER,
+                "SETOR": composicao.SETOR or "",
+                "CHAPA_ATUAL": colaborador.CHAPA if colaborador else "",
+                "NOME_ATUAL": colaborador.NOME if colaborador else "",
+                COLUNA_ALOC_CHAPA: colaborador.CHAPA if colaborador else "",
+                COLUNA_ALOC_ACAO: "",
+            })
+
+    return pd.DataFrame(linhas, columns=list(COLUNAS_FIXAS_PLANILHA_ALOCACOES))
+
+
+def analisar_planilha_alocacoes(arquivo, session):
+    """Le a planilha de alocacoes e devolve o plano, sem gravar nada.
+
+    Cada linha vale por si (nao ha agrupamento por equipe, ao contrario da
+    planilha de vagas): a unidade e a vaga (COMPOSICAO_ID).
+    """
+    try:
+        df = pd.read_excel(arquivo)
+    except Exception as erro:
+        raise ValueError(f"Não foi possível ler a planilha: {erro}")
+
+    colunas = {str(c).strip(): c for c in df.columns}
+    faltando = [
+        c for c in (COLUNA_ALOC_COMPOSICAO_ID, COLUNA_ALOC_ACAO) if c not in colunas
+    ]
+    if faltando:
+        raise ValueError(f"A planilha precisa das colunas {', '.join(faltando)}.")
+
+    usuario = auth.usuario_logado()
+    plano = {"alocar": [], "remover": [], "erros": [], "ignoradas": 0}
+
+    def registrar_erro(numero, rotulo, mensagem):
+        plano["erros"].append({"linha": numero, "equipe": rotulo, "erro": mensagem})
+
+    chapas_ja_planejadas = set()
+
+    for indice, linha in df.iterrows():
+        numero = int(indice) + 2
+
+        composicao_id_bruto = linha[colunas[COLUNA_ALOC_COMPOSICAO_ID]]
+        acao = texto_da_celula(linha[colunas[COLUNA_ALOC_ACAO]]).lower()
+        chapa = (
+            texto_da_celula(linha[colunas[COLUNA_ALOC_CHAPA]])
+            if COLUNA_ALOC_CHAPA in colunas else ""
+        )
+
+        if pd.isna(composicao_id_bruto) and not acao:
+            continue
+
+        try:
+            composicao_id = int(composicao_id_bruto)
+        except (TypeError, ValueError):
+            registrar_erro(numero, "(linha inválida)", "COMPOSICAO_ID inválido.")
+            continue
+
+        rotulo = f"vaga #{composicao_id}"
+
+        if not acao:
+            plano["ignoradas"] += 1
+            continue
+
+        if acao not in ACOES_PLANILHA_ALOCACOES:
+            registrar_erro(numero, rotulo, f"Ação '{acao}' não existe. Use alocar, editar ou remover.")
+            continue
+
+        composicao = (
+            session.query(ComposicaoEquipe)
+            .options(
+                joinedload(ComposicaoEquipe.equipe),
+                joinedload(ComposicaoEquipe.membro).joinedload(MembroEquipe.colaborador),
+            )
+            .filter(ComposicaoEquipe.id == composicao_id)
+            .first()
+        )
+        if not composicao:
+            registrar_erro(numero, rotulo, "Vaga não encontrada.")
+            continue
+
+        equipe = composicao.equipe
+        tipo = tipo_equipe_da_vaga(composicao)
+        rotulo = f"{equipe.PREFIXO if equipe else '?'} / {composicao.FUNÇÃO_ER}"
+
+        if not auth.pode_realizar_operacao(
+            usuario,
+            OPERACAO_POR_ACAO_ALOCACAO[acao],
+            equipe.BASE if equipe else None,
+            tipo,
+            equipe_id=equipe.id if equipe else None,
+            setor=composicao.SETOR,
+        ):
+            registrar_erro(numero, rotulo, "Seu acesso não cobre esta vaga.")
+            continue
+
+        if acao == "remover":
+            if not composicao.membro:
+                registrar_erro(numero, rotulo, "Esta vaga já está livre.")
+                continue
+            plano["remover"].append({
+                "linha": numero,
+                "equipe": rotulo,
+                "composicao_id": composicao.id,
+                "chapa": composicao.membro.CHAPA,
+            })
+            continue
+
+        # acao in ("alocar", "editar")
+        if not chapa:
+            registrar_erro(numero, rotulo, f"CHAPA não informada para {acao}.")
+            continue
+        if composicao.membro and str(composicao.membro.CHAPA).strip() == chapa:
+            plano["ignoradas"] += 1
+            continue
+        if composicao.membro and acao == "alocar":
+            registrar_erro(
+                numero, rotulo,
+                "Esta vaga já está ocupada por outro colaborador. Use a ação 'editar' para trocar."
+            )
+            continue
+        if not composicao.membro and acao == "editar":
+            registrar_erro(numero, rotulo, "Esta vaga está livre. Use a ação 'alocar'.")
+            continue
+
+        colaborador = (
+            session.query(Colaborador).filter(Colaborador.CHAPA == chapa).first()
+        )
+        if not colaborador:
+            registrar_erro(numero, rotulo, f"Colaborador de CHAPA {chapa} não encontrado.")
+            continue
+
+        if chapa in chapas_ja_planejadas:
+            registrar_erro(numero, rotulo, f"A CHAPA {chapa} já aparece em outra linha de alocação.")
+            continue
+        chapas_ja_planejadas.add(chapa)
+
+        alocacao_existente = (
+            session.query(MembroEquipe)
+            .options(joinedload(MembroEquipe.composicao).joinedload(ComposicaoEquipe.equipe))
+            .filter(MembroEquipe.CHAPA == chapa)
+            .first()
+        )
+        item = {
+            "linha": numero,
+            "equipe": rotulo,
+            "composicao_id": composicao.id,
+            "chapa": chapa,
+            "nome": colaborador.NOME or "",
+            "conflito": False,
+            "chapa_antiga": str(composicao.membro.CHAPA).strip() if composicao.membro else None,
+        }
+        if alocacao_existente:
+            comp_atual = alocacao_existente.composicao
+            equipe_atual = comp_atual.equipe if comp_atual else None
+            item["conflito"] = True
+            item["alocacao_atual"] = {
+                "composicao_id": comp_atual.id if comp_atual else None,
+                "equipe": equipe_atual.PREFIXO if equipe_atual else "",
+                "base": equipe_atual.BASE if equipe_atual else "",
+                "funcao_er": comp_atual.FUNÇÃO_ER if comp_atual else "",
+            }
+        plano["alocar"].append(item)
+
+    return plano
+
+
+@app.route("/api/alocacoes/planilha", methods=["GET"])
+@exige_permissao(auth.VER_EQUIPES)
+def baixar_planilha_alocacoes():
+    session = SessionLocal()
+    try:
+        df = montar_planilha_alocacoes(session)
+
+        buffer = io.BytesIO()
+        with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+            df.to_excel(writer, index=False, sheet_name="Alocações")
+            planilha = writer.sheets["Alocações"]
+            for coluna in planilha.columns:
+                largura = max(
+                    len(str(celula.value)) if celula.value is not None else 0
+                    for celula in coluna
+                )
+                planilha.column_dimensions[coluna[0].column_letter].width = max(
+                    12, largura + 3
+                )
+            planilha.freeze_panes = "A2"
+
+        buffer.seek(0)
+        return send_file(
+            buffer,
+            mimetype=(
+                "application/vnd.openxmlformats-officedocument"
+                ".spreadsheetml.sheet"
+            ),
+            as_attachment=True,
+            download_name="alocacoes.xlsx",
+        )
+    except Exception as erro:
+        print(f"[ERRO] baixar_planilha_alocacoes: {erro}")
+        return jsonify({"erro": "Não foi possível gerar a planilha."}), 500
+    finally:
+        session.close()
+
+
+@app.route("/api/alocacoes/planilha/previa", methods=["POST"])
+@exige_permissao(auth.VER_EQUIPES)
+def prever_planilha_alocacoes():
+    arquivo = request.files.get("arquivo")
+    if not arquivo:
+        return jsonify({"erro": "Arquivo não enviado."}), 400
+
+    session = SessionLocal()
+    try:
+        return jsonify(analisar_planilha_alocacoes(arquivo, session))
+    except ValueError as erro:
+        return jsonify({"erro": str(erro)}), 400
+    except Exception as erro:
+        print(f"[ERRO] prever_planilha_alocacoes: {erro}")
+        return jsonify({"erro": "Não foi possível analisar a planilha."}), 500
+    finally:
+        session.close()
+
+
+@app.route("/api/alocacoes/planilha/aplicar", methods=["POST"])
+@exige_permissao(auth.VER_EQUIPES)
+def aplicar_planilha_alocacoes():
+    arquivo = request.files.get("arquivo")
+    if not arquivo:
+        return jsonify({"erro": "Arquivo não enviado."}), 400
+
+    confirmar_conflitos = set(request.form.getlist("confirmar_conflitos"))
+
+    session = SessionLocal()
+    try:
+        plano = analisar_planilha_alocacoes(arquivo, session)
+
+        if plano["erros"]:
+            return jsonify({
+                "erro": "A planilha tem linhas com problema. Corrija antes de aplicar.",
+                "plano": plano,
+            }), 400
+
+        pendentes = [
+            item for item in plano["alocar"]
+            if item["conflito"] and item["chapa"] not in confirmar_conflitos
+        ]
+        if pendentes:
+            return jsonify({
+                "erro": "Há conflitos de colaborador em outra equipe sem confirmação.",
+                "plano": plano,
+            }), 409
+
+        for item in plano["remover"]:
+            membro = (
+                session.query(MembroEquipe)
+                .filter(MembroEquipe.composicao_id == item["composicao_id"])
+                .first()
+            )
+            if membro:
+                session.delete(membro)
+        session.flush()
+
+        for item in plano["alocar"]:
+            # "editar": troca o ocupante desta MESMA vaga antes de alocar o novo
+            if item.get("chapa_antiga"):
+                atual = (
+                    session.query(MembroEquipe)
+                    .filter(MembroEquipe.composicao_id == item["composicao_id"])
+                    .first()
+                )
+                if atual:
+                    session.delete(atual)
+                session.flush()
+
+            if item["conflito"]:
+                antigo = (
+                    session.query(MembroEquipe)
+                    .filter(MembroEquipe.CHAPA == item["chapa"])
+                    .first()
+                )
+                if antigo:
+                    session.delete(antigo)
+                session.flush()
+
+            session.add(MembroEquipe(
+                composicao_id=item["composicao_id"], CHAPA=item["chapa"]
+            ))
+
+        session.commit()
+
+        return jsonify({
+            "sucesso": True,
+            "alocados": len(plano["alocar"]),
+            "removidos": len(plano["remover"]),
+            "ignoradas": plano["ignoradas"],
+        })
+    except IntegrityError:
+        session.rollback()
+        return jsonify({"erro": "Alguma vaga ou colaborador ficou em conflito ao aplicar. Tente novamente."}), 400
+    except ValueError as erro:
+        session.rollback()
+        return jsonify({"erro": str(erro)}), 400
+    except Exception as erro:
+        session.rollback()
+        print(f"[ERRO] aplicar_planilha_alocacoes: {erro}")
+        return jsonify({"erro": "Não foi possível aplicar a planilha."}), 500
+    finally:
+        session.close()
+
+
+# ============================================================
+# API - FOLGUISTA EXTRA
+# ============================================================
+
+@app.route("/api/equipes/<int:equipe_id>/folguista-extra", methods=["POST"])
+@exige_permissao(auth.VER_EQUIPES)
+def adicionar_folguista_extra(equipe_id):
+    """Aloca um colaborador extra numa equipe Folguista, sem alterar a
+    quantidade padrao de vagas (a vaga criada aqui tem ORIGEM=EXTRA e fica
+    fora do alcance da planilha de equipes e dos calculos de 'vagas')."""
+    dados = request.get_json()
+    if not dados:
+        return jsonify({"erro": "Dados não enviados."}), 400
+
+    funcao_er = str(dados.get("funcao_er", "")).strip()
+    chapa = str(dados.get("chapa", "")).strip()
+    setor = str(dados.get("setor", "")).strip().upper()
+    confirmar_transferencia = bool(dados.get("confirmar_transferencia"))
+
+    if not funcao_er:
+        return jsonify({"erro": "Função não informada."}), 400
+    if not chapa:
+        return jsonify({"erro": "CHAPA não informada."}), 400
+    if setor not in SETORES_NEGOCIO:
+        return jsonify({"erro": f"Setor precisa ser um de: {', '.join(SETORES_NEGOCIO)}."}), 400
+
+    session = SessionLocal()
+    try:
+        with session.begin():
+            equipe = (
+                session.query(Equipe)
+                .filter(Equipe.id == equipe_id)
+                .with_for_update()
+                .first()
+            )
+            if not equipe:
+                return jsonify({"erro": "Equipe não encontrada."}), 404
+            if not eh_folguista(equipe.PREFIXO):
+                return jsonify({"erro": "Folguista Extra só pode ser adicionado numa equipe Folguista."}), 400
+
+            colaborador = (
+                session.query(Colaborador)
+                .filter(Colaborador.CHAPA == chapa)
+                .first()
+            )
+            if not colaborador:
+                return jsonify({"erro": "Colaborador não encontrado."}), 404
+
+            if not auth.pode_realizar_operacao(
+                auth.usuario_logado(), auth.OPERACAO_ALOCAR, equipe.BASE,
+                TIPO_EQUIPE_PADRAO, equipe_id=equipe.id, setor=setor,
+            ):
+                return jsonify({
+                    "erro": "Seu acesso não cobre a base ou o setor desta equipe."
+                }), 403
+
+            alocacao_existente = (
+                session.query(MembroEquipe)
+                .options(
+                    joinedload(MembroEquipe.composicao).joinedload(ComposicaoEquipe.equipe)
+                )
+                .filter(MembroEquipe.CHAPA == chapa)
+                .first()
+            )
+            if alocacao_existente and not confirmar_transferencia:
+                comp_atual = alocacao_existente.composicao
+                equipe_atual = comp_atual.equipe if comp_atual else None
+                return jsonify({
+                    "conflito": True,
+                    "erro": "Este colaborador já está alocado em outra equipe.",
+                    "mensagem": "Este colaborador já está alocado em outra equipe.",
+                    "alocacao_atual": {
+                        "composicao_id": comp_atual.id if comp_atual else None,
+                        "equipe_id": equipe_atual.id if equipe_atual else None,
+                        "equipe": equipe_atual.PREFIXO if equipe_atual else "",
+                        "base": equipe_atual.BASE if equipe_atual else "",
+                        "funcao_er": comp_atual.FUNÇÃO_ER if comp_atual else "",
+                    },
+                }), 409
+            if alocacao_existente and confirmar_transferencia:
+                session.delete(alocacao_existente)
+                session.flush()
+
+            composicao = ComposicaoEquipe(
+                equipe_id=equipe.id,
+                FUNÇÃO_ER=funcao_er,
+                ESTRUTURA=TIPO_EQUIPE_PADRAO,
+                SETOR=setor,
+                ORIGEM=ORIGEM_EXTRA,
+            )
+            session.add(composicao)
+            session.flush()
+
+            membro = MembroEquipe(composicao_id=composicao.id, CHAPA=chapa)
+            session.add(membro)
+
+        return jsonify({
+            "sucesso": True,
+            "mensagem": "Folguista Extra adicionado com sucesso.",
+            "vaga": {
+                "id": composicao.id,
+                "funcao_er": composicao.FUNÇÃO_ER,
+                "setor": composicao.SETOR,
+                "eh_extra": True,
+            },
+        })
+    except IntegrityError:
+        session.rollback()
+        return jsonify({"erro": "Este colaborador já está alocado em outra equipe."}), 400
+    except Exception as erro:
+        session.rollback()
+        print(f"[ERRO] adicionar_folguista_extra: {erro}")
+        return jsonify({"erro": "Não foi possível adicionar o Folguista Extra."}), 500
+    finally:
+        session.close()
+
+
+# ============================================================
 # API - OPÇÕES DE ALOCAÇÃO
 # ============================================================
 
@@ -1759,11 +2401,74 @@ def obter_colaboradores():
 
 
 # ============================================================
+# API - PLANILHA DE COLABORADORES (ATUALIZAÇÃO DE CADASTRO)
+# ============================================================
+#
+# Reaproveita database/importacao/importar_colaboradores.py (mesmo padrao de
+# planilha, mesmas validações) por trás de um endpoint web, exclusivo do
+# Administrador (GERENCIAR_COLABORADORES). A "previa" roda a MESMA lógica de
+# upsert dentro de uma transação e dá rollback no final, em vez de manter um
+# segundo caminho de código só para simular o resultado.
+
+@app.route("/api/colaboradores/planilha/previa", methods=["POST"])
+@exige_permissao(auth.GERENCIAR_COLABORADORES)
+def prever_planilha_colaboradores():
+    arquivo = request.files.get("arquivo")
+    if not arquivo:
+        return jsonify({"erro": "Arquivo não enviado."}), 400
+
+    session = SessionLocal()
+    try:
+        resumo = processar_planilha_colaboradores(arquivo, session, aplicar=False)
+        session.rollback()
+        return jsonify(resumo)
+    except ValueError as erro:
+        session.rollback()
+        return jsonify({"erro": str(erro)}), 400
+    except Exception as erro:
+        session.rollback()
+        print(f"[ERRO] prever_planilha_colaboradores: {erro}")
+        return jsonify({"erro": "Não foi possível analisar a planilha."}), 500
+    finally:
+        session.close()
+
+
+@app.route("/api/colaboradores/planilha/aplicar", methods=["POST"])
+@exige_permissao(auth.GERENCIAR_COLABORADORES)
+def aplicar_planilha_colaboradores():
+    arquivo = request.files.get("arquivo")
+    if not arquivo:
+        return jsonify({"erro": "Arquivo não enviado."}), 400
+
+    session = SessionLocal()
+    try:
+        resumo = processar_planilha_colaboradores(arquivo, session, aplicar=True)
+        if resumo["erros"]:
+            session.rollback()
+            return jsonify({
+                "erro": "A planilha tem linhas com problema. Corrija antes de aplicar.",
+                "resumo": resumo,
+            }), 400
+
+        session.commit()
+        return jsonify({"sucesso": True, **resumo})
+    except ValueError as erro:
+        session.rollback()
+        return jsonify({"erro": str(erro)}), 400
+    except Exception as erro:
+        session.rollback()
+        print(f"[ERRO] aplicar_planilha_colaboradores: {erro}")
+        return jsonify({"erro": "Não foi possível aplicar a planilha."}), 500
+    finally:
+        session.close()
+
+
+# ============================================================
 # ALOCAR COLABORADOR
 # ============================================================
 
 @app.route("/api/equipes/alocar", methods=["POST"])
-@exige_permissao(auth.ALOCAR)
+@exige_permissao(auth.VER_EQUIPES)
 def alocar_colaborador():
     dados = request.get_json()
     if not dados:
@@ -1771,6 +2476,7 @@ def alocar_colaborador():
 
     composicao_id = dados.get("composicao_id")
     chapa = str(dados.get("chapa", "")).strip()
+    confirmar_transferencia = bool(dados.get("confirmar_transferencia"))
 
     if not composicao_id:
         return jsonify({"erro": "Vaga não informada."}), 400
@@ -1788,14 +2494,6 @@ def alocar_colaborador():
             if not colaborador:
                 return jsonify({"erro": "Colaborador não encontrado."}), 404
 
-            alocacao_existente = (
-                session.query(MembroEquipe)
-                .filter(MembroEquipe.CHAPA == chapa)
-                .first()
-            )
-            if alocacao_existente:
-                return jsonify({"erro": "Este colaborador já está alocado em outra equipe."}), 400
-
             composicao = (
                 session.query(ComposicaoEquipe)
                 .filter(ComposicaoEquipe.id == composicao_id)
@@ -1810,10 +2508,13 @@ def alocar_colaborador():
                 session.query(Equipe).filter(Equipe.id == composicao.equipe_id).first()
             )
 
-            if not auth.pode_atuar_na_base_e_tipo(
+            if not auth.pode_realizar_operacao(
                 auth.usuario_logado(),
+                auth.OPERACAO_ALOCAR,
                 equipe_da_vaga.BASE if equipe_da_vaga else None,
                 tipo_equipe_da_vaga(composicao),
+                equipe_id=equipe_da_vaga.id if equipe_da_vaga else None,
+                setor=composicao.SETOR,
             ):
                 return jsonify({
                     "erro": "Seu acesso não cobre a base ou o tipo de equipe desta vaga."
@@ -1821,6 +2522,33 @@ def alocar_colaborador():
 
             if composicao.membro:
                 return jsonify({"erro": "Esta vaga já está ocupada."}), 400
+
+            alocacao_existente = (
+                session.query(MembroEquipe)
+                .options(
+                    joinedload(MembroEquipe.composicao).joinedload(ComposicaoEquipe.equipe)
+                )
+                .filter(MembroEquipe.CHAPA == chapa)
+                .first()
+            )
+            if alocacao_existente and not confirmar_transferencia:
+                comp_atual = alocacao_existente.composicao
+                equipe_atual = comp_atual.equipe if comp_atual else None
+                return jsonify({
+                    "conflito": True,
+                    "erro": "Este colaborador já está alocado em outra equipe.",
+                    "mensagem": "Este colaborador já está alocado em outra equipe.",
+                    "alocacao_atual": {
+                        "composicao_id": comp_atual.id if comp_atual else None,
+                        "equipe_id": equipe_atual.id if equipe_atual else None,
+                        "equipe": equipe_atual.PREFIXO if equipe_atual else "",
+                        "base": equipe_atual.BASE if equipe_atual else "",
+                        "funcao_er": comp_atual.FUNÇÃO_ER if comp_atual else "",
+                    },
+                }), 409
+            if alocacao_existente and confirmar_transferencia:
+                session.delete(alocacao_existente)
+                session.flush()
 
             membro = MembroEquipe(composicao_id=composicao_id, CHAPA=chapa)
             session.add(membro)
@@ -1850,7 +2578,7 @@ def alocar_colaborador():
 # ============================================================
 
 @app.route("/api/equipes/remover", methods=["POST"])
-@exige_permissao(auth.ALOCAR)
+@exige_permissao(auth.VER_EQUIPES)
 def remover_colaborador():
     dados = request.get_json()
     if not dados:
@@ -1874,10 +2602,14 @@ def remover_colaborador():
             return jsonify({"erro": "Não existe colaborador alocado nesta vaga."}), 404
 
         composicao = membro.composicao
-        if not auth.pode_atuar_na_base_e_tipo(
+        equipe_da_vaga = composicao.equipe if composicao else None
+        if not auth.pode_realizar_operacao(
             auth.usuario_logado(),
-            composicao.equipe.BASE if composicao and composicao.equipe else None,
+            auth.OPERACAO_REMOVER,
+            equipe_da_vaga.BASE if equipe_da_vaga else None,
             tipo_equipe_da_vaga(composicao) if composicao else None,
+            equipe_id=equipe_da_vaga.id if equipe_da_vaga else None,
+            setor=composicao.SETOR if composicao else None,
         ):
             return jsonify({
                 "erro": "Seu acesso não cobre a base ou o tipo de equipe desta vaga."
@@ -1896,6 +2628,133 @@ def remover_colaborador():
         session.rollback()
         print(f"[ERRO] remover_colaborador: {erro}")
         return jsonify({"erro": "Não foi possível remover o colaborador."}), 500
+    finally:
+        session.close()
+
+
+# ============================================================
+# EDITAR ALOCAÇÃO (TROCAR O COLABORADOR DE UMA VAGA OCUPADA)
+# ============================================================
+#
+# Diferente de alocar/remover: aqui a vaga já está ocupada e o colaborador
+# atual é substituído por outro, numa única operação. Existe para o Analista
+# poder ajustar alocações dentro das equipes vinculadas a ele (vinculo
+# OPERACAO=EDITAR) sem precisar das permissões de ALOCAR/REMOVER separadas.
+
+@app.route("/api/equipes/editar-alocacao", methods=["POST"])
+@exige_permissao(auth.VER_EQUIPES)
+def editar_alocacao():
+    dados = request.get_json()
+    if not dados:
+        return jsonify({"erro": "Dados não enviados."}), 400
+
+    composicao_id = dados.get("composicao_id")
+    chapa = str(dados.get("chapa", "")).strip()
+    confirmar_transferencia = bool(dados.get("confirmar_transferencia"))
+
+    if not composicao_id:
+        return jsonify({"erro": "Vaga não informada."}), 400
+    if not chapa:
+        return jsonify({"erro": "CHAPA não informada."}), 400
+
+    session = SessionLocal()
+    try:
+        with session.begin():
+            composicao = (
+                session.query(ComposicaoEquipe)
+                .options(joinedload(ComposicaoEquipe.equipe))
+                .filter(ComposicaoEquipe.id == composicao_id)
+                .with_for_update()
+                .first()
+            )
+            if not composicao:
+                return jsonify({"erro": "Vaga não encontrada."}), 404
+
+            membro_atual = (
+                session.query(MembroEquipe)
+                .filter(MembroEquipe.composicao_id == composicao_id)
+                .first()
+            )
+            if not membro_atual:
+                return jsonify({
+                    "erro": "Esta vaga está livre. Use alocar em vez de editar."
+                }), 400
+
+            equipe_da_vaga = composicao.equipe
+            if not auth.pode_realizar_operacao(
+                auth.usuario_logado(),
+                auth.OPERACAO_EDITAR,
+                equipe_da_vaga.BASE if equipe_da_vaga else None,
+                tipo_equipe_da_vaga(composicao),
+                equipe_id=equipe_da_vaga.id if equipe_da_vaga else None,
+                setor=composicao.SETOR,
+            ):
+                return jsonify({
+                    "erro": "Seu acesso não cobre a base ou o tipo de equipe desta vaga."
+                }), 403
+
+            if str(membro_atual.CHAPA).strip() == chapa:
+                return jsonify({
+                    "erro": "Este colaborador já está alocado nesta vaga."
+                }), 400
+
+            colaborador = (
+                session.query(Colaborador)
+                .filter(Colaborador.CHAPA == chapa)
+                .first()
+            )
+            if not colaborador:
+                return jsonify({"erro": "Colaborador não encontrado."}), 404
+
+            alocacao_existente = (
+                session.query(MembroEquipe)
+                .options(
+                    joinedload(MembroEquipe.composicao).joinedload(ComposicaoEquipe.equipe)
+                )
+                .filter(MembroEquipe.CHAPA == chapa)
+                .first()
+            )
+            if alocacao_existente and not confirmar_transferencia:
+                comp_atual = alocacao_existente.composicao
+                equipe_atual = comp_atual.equipe if comp_atual else None
+                return jsonify({
+                    "conflito": True,
+                    "erro": "Este colaborador já está alocado em outra equipe.",
+                    "mensagem": "Este colaborador já está alocado em outra equipe.",
+                    "alocacao_atual": {
+                        "composicao_id": comp_atual.id if comp_atual else None,
+                        "equipe_id": equipe_atual.id if equipe_atual else None,
+                        "equipe": equipe_atual.PREFIXO if equipe_atual else "",
+                        "base": equipe_atual.BASE if equipe_atual else "",
+                        "funcao_er": comp_atual.FUNÇÃO_ER if comp_atual else "",
+                    },
+                }), 409
+
+            chapa_antiga = str(membro_atual.CHAPA).strip()
+            session.delete(membro_atual)
+            if alocacao_existente and confirmar_transferencia:
+                session.delete(alocacao_existente)
+            session.flush()
+
+            session.add(MembroEquipe(composicao_id=composicao_id, CHAPA=chapa))
+
+        return jsonify({
+            "sucesso": True,
+            "mensagem": "Alocação atualizada com sucesso.",
+            "chapa_anterior": chapa_antiga,
+            "colaborador": {
+                "chapa": chapa,
+                "nome": colaborador.NOME or "",
+                "funcao": colaborador.FUNÇÃO or "",
+            },
+        })
+    except IntegrityError:
+        session.rollback()
+        return jsonify({"erro": "Este colaborador já está alocado em outra equipe, ou a vaga já está ocupada."}), 400
+    except Exception as erro:
+        session.rollback()
+        print(f"[ERRO] editar_alocacao: {erro}")
+        return jsonify({"erro": "Não foi possível editar a alocação."}), 500
     finally:
         session.close()
 
@@ -1947,7 +2806,7 @@ def listar_usuarios():
             .all()
         )
 
-        return jsonify([auth.descrever_usuario(u) for u in usuarios])
+        return jsonify([auth.descrever_usuario(u, session=session) for u in usuarios])
     except Exception as erro:
         print(f"[ERRO] listar_usuarios: {erro}")
         return jsonify({"erro": "Não foi possível carregar os usuários."}), 500
@@ -1995,7 +2854,7 @@ def criar_usuario():
 
         return jsonify({
             "sucesso": True,
-            "usuario": auth.descrever_usuario(carregar_usuario(session, usuario.id)),
+            "usuario": auth.descrever_usuario(carregar_usuario(session, usuario.id), session=session),
         })
     except IntegrityError:
         session.rollback()
@@ -2042,19 +2901,19 @@ def atualizar_usuario(usuario_id):
             return jsonify({"erro": "Já existe um usuário com esse login."}), 400
 
         eu = auth.usuario_logado()
-        virando_comum = campos["nivel"] != auth.NIVEL_MESTRE or not campos["ativo"]
+        virando_comum = campos["nivel"] != auth.NIVEL_ADMINISTRADOR or not campos["ativo"]
 
-        # travas para nao sobrar zero mestre ativo — e para ninguem tirar o
-        # proprio acesso sem querer
-        if usuario.NIVEL == auth.NIVEL_MESTRE and virando_comum:
+        # travas para nao sobrar zero administrador ativo — e para ninguem
+        # tirar o proprio acesso sem querer
+        if usuario.NIVEL == auth.NIVEL_ADMINISTRADOR and virando_comum:
             if usuario.id == eu["id"]:
                 return jsonify({
-                    "erro": "Você não pode remover o seu próprio acesso de mestre."
+                    "erro": "Você não pode remover o seu próprio acesso de Administrador."
                 }), 400
 
-            if contar_mestres_ativos(session, ignorando=usuario_id) == 0:
+            if contar_administradores_ativos(session, ignorando=usuario_id) == 0:
                 return jsonify({
-                    "erro": "É preciso manter ao menos um mestre ativo."
+                    "erro": "É preciso manter ao menos um Administrador ativo."
                 }), 400
 
         usuario.USUARIO = campos["usuario"]
@@ -2070,7 +2929,7 @@ def atualizar_usuario(usuario_id):
 
         return jsonify({
             "sucesso": True,
-            "usuario": auth.descrever_usuario(carregar_usuario(session, usuario_id)),
+            "usuario": auth.descrever_usuario(carregar_usuario(session, usuario_id), session=session),
         })
     except IntegrityError:
         session.rollback()
@@ -2083,9 +2942,9 @@ def atualizar_usuario(usuario_id):
         session.close()
 
 
-def contar_mestres_ativos(session, ignorando=None):
+def contar_administradores_ativos(session, ignorando=None):
     consulta = session.query(Usuario).filter(
-        Usuario.NIVEL == auth.NIVEL_MESTRE,
+        Usuario.NIVEL == auth.NIVEL_ADMINISTRADOR,
         Usuario.ATIVO.is_(True),
     )
 
@@ -2108,10 +2967,10 @@ def remover_usuario(usuario_id):
             return jsonify({"erro": "Você não pode excluir o seu próprio usuário."}), 400
 
         if (
-            usuario.NIVEL == auth.NIVEL_MESTRE
-            and contar_mestres_ativos(session, ignorando=usuario_id) == 0
+            usuario.NIVEL == auth.NIVEL_ADMINISTRADOR
+            and contar_administradores_ativos(session, ignorando=usuario_id) == 0
         ):
-            return jsonify({"erro": "É preciso manter ao menos um mestre ativo."}), 400
+            return jsonify({"erro": "É preciso manter ao menos um Administrador ativo."}), 400
 
         session.delete(usuario)
         session.commit()

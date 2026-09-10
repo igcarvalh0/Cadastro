@@ -1,10 +1,10 @@
-"""Cria ou repoe um usuario MESTRE pelo terminal.
+"""Cria ou repoe um usuario ADMINISTRADOR pelo terminal.
 
 Serve para o primeiro acesso e como saida de emergencia: se ninguem mais
-conseguir entrar (senha esquecida, ultimo mestre desativado sem querer), este
-script devolve o acesso sem precisar mexer no banco na mao.
+conseguir entrar (senha esquecida, ultimo administrador desativado sem
+querer), este script devolve o acesso sem precisar mexer no banco na mao.
 
-    python -m database.criar_usuario_mestre
+    python -m database.criar_usuario_administrador
 
 A senha e pedida sem aparecer na tela e nunca e gravada em texto puro — vai
 para o banco so como hash.
@@ -37,7 +37,7 @@ def perguntar_senha():
 def main():
     print()
     print("=" * 56)
-    print("USUÁRIO MESTRE — acesso total ao sistema")
+    print("USUÁRIO ADMINISTRADOR — acesso total ao sistema")
     print("=" * 56)
 
     login = input("Usuário: ").strip()
@@ -56,7 +56,7 @@ def main():
         if existente:
             print(f"\n'{existente.USUARIO}' já existe ({existente.NOME}).")
             resposta = input(
-                "Redefinir a senha e devolver o acesso de mestre? [s/N] "
+                "Redefinir a senha e devolver o acesso de Administrador? [s/N] "
             ).strip().lower()
 
             if resposta != "s":
@@ -64,11 +64,11 @@ def main():
                 return 1
 
             existente.SENHA_HASH = auth.gerar_hash_senha(perguntar_senha())
-            existente.NIVEL = auth.NIVEL_MESTRE
+            existente.NIVEL = auth.NIVEL_ADMINISTRADOR
             existente.ATIVO = True
             sessao.commit()
 
-            print(f"\nPronto: '{existente.USUARIO}' voltou a ser mestre ativo.")
+            print(f"\nPronto: '{existente.USUARIO}' voltou a ser Administrador ativo.")
             return 0
 
         nome = input("Nome completo: ").strip() or login
@@ -77,13 +77,13 @@ def main():
         sessao.add(Usuario(
             USUARIO=login,
             NOME=nome,
-            NIVEL=auth.NIVEL_MESTRE,
+            NIVEL=auth.NIVEL_ADMINISTRADOR,
             ATIVO=True,
             SENHA_HASH=auth.gerar_hash_senha(senha),
         ))
         sessao.commit()
 
-        print(f"\nPronto: '{login}' criado como mestre.")
+        print(f"\nPronto: '{login}' criado como Administrador.")
         return 0
     except Exception as erro:
         sessao.rollback()

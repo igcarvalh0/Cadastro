@@ -100,6 +100,11 @@ class ComposicaoEquipe(Base):
     SUPERVISOR = Column(String, nullable=True)
     COORDENADOR = Column(String, nullable=True)
 
+    # None/"PADRAO" = vaga padrao (conta nas vagas da equipe/disciplina).
+    # "EXTRA" = Folguista Extra: colaborador alocado sem aumentar a
+    # quantidade padrao de vagas (ver ORIGEM_EXTRA em app.py).
+    ORIGEM = Column(String, nullable=True)
+
     equipe = relationship(
         "Equipe",
         back_populates="composicoes"
@@ -170,6 +175,24 @@ class Usuario(Base):
         back_populates="usuario",
         cascade="all, delete-orphan"
     )
+
+
+class NivelPermissao(Base):
+    """Personalizacao das permissoes de um nivel, feita pelo Administrador na
+    tela de Usuarios. Ausencia de linhas para um NIVEL = usa o padrao do
+    codigo (auth.NIVEIS); a primeira vez que o Administrador salva mudancas
+    para aquele nivel, o conjunto completo desejado e gravado aqui.
+    """
+
+    __tablename__ = "niveis_permissoes"
+    __table_args__ = (
+        UniqueConstraint("NIVEL", "PERMISSAO", name="uq_nivel_permissao"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    NIVEL = Column(String, nullable=False, index=True)
+    PERMISSAO = Column(String, nullable=False)
 
 
 class VinculoUsuario(Base):

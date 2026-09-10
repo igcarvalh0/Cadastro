@@ -6,8 +6,9 @@
 -- porque um usuario pode ter varios do mesmo tipo, e os valores sao texto
 -- livre cadastrado junto com as vagas.
 --
--- Depois de rodar, crie o primeiro usuario mestre:
---   python -m database.criar_usuario_mestre
+-- Depois de rodar, crie o primeiro usuario administrador:
+--   python -m database.criar_usuario_administrador
+-- (nivel "MESTRE" renomeado para "ADMINISTRADOR" — ver migration 006)
 
 CREATE TABLE IF NOT EXISTS usuarios (
     id              SERIAL PRIMARY KEY,

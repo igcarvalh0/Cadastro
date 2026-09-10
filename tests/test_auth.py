@@ -57,12 +57,12 @@ def test_tamanho_minimo_de_senha(senha, aceita):
 # NÍVEIS
 # ============================================================
 
-def test_mestre_tem_todas_as_permissoes():
-    assert auth.permissoes_do_nivel(auth.NIVEL_MESTRE) == set(auth.TODAS_PERMISSOES)
+def test_administrador_tem_todas_as_permissoes():
+    assert auth.permissoes_do_nivel(auth.NIVEL_ADMINISTRADOR) == set(auth.TODAS_PERMISSOES)
 
 
-def test_mestre_ignora_vinculos():
-    assert auth.NIVEIS[auth.NIVEL_MESTRE]["ignora_vinculos"] is True
+def test_administrador_ignora_vinculos():
+    assert auth.NIVEIS[auth.NIVEL_ADMINISTRADOR]["ignora_vinculos"] is True
 
 
 def test_nivel_desconhecido_nao_da_permissao_nenhuma():
@@ -93,9 +93,9 @@ def test_supervisor_pode_alocar_mas_nao_gerenciar_usuarios():
 # ESCOPO DE BASE E TIPO DE EQUIPE
 # ============================================================
 
-def test_mestre_pode_atuar_em_qualquer_base_e_tipo():
-    mestre = {"ignora_vinculos": True, "vinculos": {}}
-    assert auth.pode_atuar_na_base_e_tipo(mestre, "BACABAL", "PODA") is True
+def test_administrador_pode_atuar_em_qualquer_base_e_tipo():
+    administrador = {"ignora_vinculos": True, "vinculos": {}}
+    assert auth.pode_atuar_na_base_e_tipo(administrador, "BACABAL", "PODA") is True
 
 
 def test_sem_usuario_nao_pode_atuar():

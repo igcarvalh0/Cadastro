@@ -451,14 +451,14 @@
     <!-- ==================================================== -->
 
     <q-dialog v-model="dialogEdicao">
-      <q-card style="min-width: 340px">
+      <q-card style="min-width: 420px; max-width: 90vw">
         <q-card-section>
           <div class="text-h6"> Editar equipe </div>
         </q-card-section>
 
         <q-separator />
 
-        <q-card-section class="q-gutter-md">
+        <q-card-section class="q-gutter-md" style="max-height: 70vh" >
           <q-select
             v-model="edicaoBase"
             outlined
@@ -474,6 +474,79 @@
           />
 
           <q-input v-model="edicaoPrefixo" outlined dense label="Prefixo" />
+
+          <q-select
+            v-model="edicaoSetor"
+            outlined
+            dense
+            clearable
+            label="Setor"
+            :options="setoresNegocio"
+          />
+
+          <q-input v-model="edicaoSupervisor" outlined dense label="Supervisor" />
+
+          <q-input v-model="edicaoCoordenador" outlined dense label="Coordenador" />
+
+          <q-separator />
+
+          <div class="text-subtitle2">Vagas por função</div>
+
+          <div
+            v-for="(linha, indice) in edicaoVagas"
+            :key="indice"
+            class="row q-col-gutter-sm items-center"
+          >
+            <div class="col-4">
+              <q-select
+                v-model="linha.tipo"
+                outlined
+                dense
+                use-input
+                new-value-mode="add-unique"
+                label="Tipo"
+                :options="estruturasDisponiveis"
+              />
+            </div>
+            <div class="col-4">
+              <q-select
+                v-model="linha.funcao"
+                outlined
+                dense
+                label="Função"
+                :options="FUNCOES_SISTEMA"
+              />
+            </div>
+            <div class="col-3">
+              <q-input
+                v-model.number="linha.quantidade"
+                outlined
+                dense
+                type="number"
+                min="0"
+                label="Qtd."
+              />
+            </div>
+            <div class="col-1">
+              <q-btn
+                flat
+                round
+                dense
+                icon="delete"
+                color="negative"
+                @click="edicaoVagas.splice(indice, 1)"
+              />
+            </div>
+          </div>
+
+          <q-btn
+            flat
+            dense
+            icon="add"
+            label="Adicionar linha"
+            color="primary"
+            @click="edicaoVagas.push({ tipo: 'CONSTRUÇÃO', funcao: null, quantidade: 0 })"
+          />
         </q-card-section>
 
         <q-card-actions align="right">
@@ -484,7 +557,7 @@
             label="Salvar"
             :disable="!podeSalvarEdicao"
             :loading="salvandoEdicao"
-            @click="salvarEdicaoEquipe"
+            @click="salvarEdicaoEquipe()"
           />
         </q-card-actions>
       </q-card>
@@ -699,7 +772,12 @@ const dialogEdicao = ref(false)
 const equipeEmEdicao = ref(null)
 const edicaoBase = ref(null)
 const edicaoPrefixo = ref('')
+const edicaoSetor = ref(null)
+const edicaoSupervisor = ref('')
+const edicaoCoordenador = ref('')
+const edicaoVagas = ref([])
 const salvandoEdicao = ref(false)
+const setoresNegocio = ref([])
 
 const basesFiltradas = ref([])
 const equipesOpcoesFiltradas = ref([])
@@ -1049,12 +1127,100 @@ function abrirEdicaoEquipe(equipe) {
   equipeEmEdicao.value = equipe
   edicaoBase.value = equipe.base
   edicaoPrefixo.value = equipe.prefixo
+
+  const vagasPadrao = (equipe.vagas || []).filter(vaga => !vaga.eh_extra)
+  edicaoSetor.value = vagasPadrao.find(vaga => vaga.setor)?.setor || null
+  edicaoSupervisor.value = vagasPadrao.find(vaga => vaga.supervisor)?.supervisor || ''
+  edicaoCoordenador.value = vagasPadrao.find(vaga => vaga.coordenador)?.coordenador || ''
+
+  const agrupado = new Map()
+  for (const vaga of vagasPadrao) {
+    const chave = `${vaga.tipo}|${vaga.funcao_er}`
+    agrupado.set(chave, (agrupado.get(chave) || 0) + 1)
+  }
+
+  edicaoVagas.value = [...agrupado.entries()].map(([chave, quantidade]) => {
+    const [tipo, funcao] = chave.split('|')
+    return { tipo, funcao, quantidade }
+  })
+
   dialogEdicao.value = true
 }
 
-async function salvarEdicaoEquipe() {
+// calcula, por (tipo, funcao), quantas vagas OCUPADAS precisariam ser
+// removidas para a nova quantidade pedida caber — o backend bloqueia essa
+// redução sem confirmação explícita, então perguntamos aqui antes de enviar.
+function calcularConflitosReducao() {
+  const vagasPadrao = (equipeEmEdicao.value?.vagas || []).filter(
+    vaga => !vaga.eh_extra
+  )
+  const porChave = new Map()
+
+  for (const vaga of vagasPadrao) {
+    const chave = `${vaga.tipo}|${vaga.funcao_er}`
+    if (!porChave.has(chave)) {
+      porChave.set(chave, [])
+    }
+    porChave.get(chave).push(vaga)
+  }
+
+  const conflitos = []
+
+  for (const linha of edicaoVagas.value) {
+    const chave = `${linha.tipo}|${linha.funcao}`
+    const vagas = porChave.get(chave) || []
+    const livres = vagas.filter(vaga => !vaga.colaborador)
+    const ocupadas = vagas.filter(vaga => vaga.colaborador)
+    const reducao = vagas.length - Number(linha.quantidade || 0)
+
+    if (reducao > livres.length) {
+      const precisaRemover = reducao - livres.length
+      conflitos.push({
+        tipo: linha.tipo,
+        funcao: linha.funcao,
+        vagas: ocupadas.slice(0, precisaRemover)
+      })
+    }
+  }
+
+  return conflitos
+}
+
+async function salvarEdicaoEquipe(confirmarRemocoesIds = null) {
   erro.value = ''
   sucesso.value = ''
+
+  let confirmarRemocoes = confirmarRemocoesIds
+
+  if (!confirmarRemocoes) {
+    const conflitos = calcularConflitosReducao()
+
+    if (conflitos.length) {
+      const detalhe = conflitos
+        .map(
+          c =>
+            `${c.funcao} (${c.tipo}): ${c.vagas
+              .map(v => `${v.colaborador?.chapa} - ${v.colaborador?.nome}`)
+              .join(', ')}`
+        )
+        .join('\n')
+
+      if (
+        !window.confirm(
+          'Reduzir a quantidade vai remover colaborador(es) já alocado(s):\n\n' +
+            `${detalhe}\n\n` +
+            'Confirma a remoção desses colaboradores?'
+        )
+      ) {
+        return
+      }
+
+      confirmarRemocoes = conflitos.flatMap(c => c.vagas.map(v => v.id))
+    } else {
+      confirmarRemocoes = []
+    }
+  }
+
   salvandoEdicao.value = true
 
   try {
@@ -1065,7 +1231,12 @@ async function salvarEdicaoEquipe() {
       },
       body: JSON.stringify({
         base: edicaoBase.value,
-        prefixo: edicaoPrefixo.value
+        prefixo: edicaoPrefixo.value,
+        setor: edicaoSetor.value,
+        supervisor: edicaoSupervisor.value,
+        coordenador: edicaoCoordenador.value,
+        vagas: edicaoVagas.value.filter(linha => linha.funcao),
+        confirmar_remocoes: confirmarRemocoes
       })
     })
 
@@ -1083,6 +1254,16 @@ async function salvarEdicaoEquipe() {
     erro.value = e.message || 'Erro ao atualizar a equipe.'
   } finally {
     salvandoEdicao.value = false
+  }
+}
+
+async function carregarSetoresNegocio() {
+  try {
+    const resposta = await fetch('/api/sessao')
+    const dados = await resposta.json()
+    setoresNegocio.value = dados.setores_negocio || []
+  } catch (e) {
+    console.error(e)
   }
 }
 
@@ -1175,5 +1356,8 @@ watch(vagaEquipe, id => {
       : 'Construção'
 })
 
-onMounted(carregarEquipes)
+onMounted(() => {
+  carregarSetoresNegocio()
+  carregarEquipes()
+})
 </script>

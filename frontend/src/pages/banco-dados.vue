@@ -77,6 +77,48 @@
                 />
               </div>
 
+              <div class="col-12 col-md-2">
+                <q-input
+                  v-model="filtroEquipe"
+                  outlined
+                  dense
+                  clearable
+                  placeholder="Pesquisar por prefixo ou base..."
+                >
+                  <template #prepend>
+                    <q-icon name="search" />
+                  </template>
+                </q-input>
+              </div>
+
+              <div class="col-auto">
+                <q-btn-toggle
+                  v-model="situacaoAlocacao"
+                  dense
+                  no-caps
+                  unelevated
+                  toggle-color="primary"
+                  color="grey-3"
+                  text-color="grey-8"
+                  :options="[
+                    { label: 'Todas', value: 'TODAS' },
+                    { label: 'Completas', value: 'COMPLETAS' },
+                    { label: 'Incompletas', value: 'INCOMPLETAS' }
+                  ]"
+                />
+              </div>
+
+              <div class="col-auto">
+                <q-btn
+                  outline
+                  dense
+                  color="primary"
+                  icon="upload_file"
+                  label="Alocação em massa"
+                  @click="abrirPlanilhaAlocacoes"
+                />
+              </div>
+
               <div class="col-auto">
                 <q-chip color="primary" text-color="white">
                   {{ equipesFiltradas.length }} equipes
@@ -162,6 +204,18 @@
                   <q-card flat>
                     <q-card-section class="q-pb-none text-right">
                       <q-btn
+                        v-if="ehEquipeFolguista(equipe)"
+                        outline
+                        dense
+                        size="sm"
+                        color="primary"
+                        icon="person_add"
+                        label="Adicionar Folguista Extra"
+                        class="q-mr-sm"
+                        @click="abrirFolguistaExtra(equipe)"
+                      />
+
+                      <q-btn
                         outline
                         dense
                         size="sm"
@@ -219,6 +273,16 @@
                           class="col-12 col-sm-3 flex justify-center items-center"
                         >
                           <q-chip
+                            v-if="vaga.eh_extra"
+                            color="amber-8"
+                            text-color="white"
+                            size="sm"
+                            icon="star"
+                          >
+                            EXTRA
+                          </q-chip>
+
+                          <q-chip
                             v-if="vaga.colaborador"
                             color="positive"
                             text-color="white"
@@ -236,17 +300,29 @@
                             LIVRE
                           </q-chip>
 
-                          <q-btn
-                            v-if="vaga.colaborador"
-                            flat
-                            round
-                            dense
-                            color="negative"
-                            icon="person_remove"
-                            class="q-ml-sm"
-                            aria-label="Remover colaborador"
-                            @click="removerColaborador(vaga.id)"
-                          />
+                          <template v-if="vaga.colaborador">
+                            <q-btn
+                              flat
+                              round
+                              dense
+                              color="primary"
+                              icon="swap_horiz"
+                              class="q-ml-sm"
+                              aria-label="Trocar colaborador"
+                              @click="abrirEdicaoAlocacao(vaga)"
+                            />
+
+                            <q-btn
+                              flat
+                              round
+                              dense
+                              color="negative"
+                              icon="person_remove"
+                              class="q-ml-sm"
+                              aria-label="Remover colaborador"
+                              @click="removerColaborador(vaga.id)"
+                            />
+                          </template>
 
                           <q-btn
                             v-else
@@ -478,6 +554,260 @@
         </q-card-actions>
       </q-card>
     </q-dialog>
+
+    <!-- ================================================== -->
+    <!-- EDITAR ALOCAÇÃO (TROCAR COLABORADOR) -->
+    <!-- ================================================== -->
+
+    <q-dialog v-model="dialogEdicaoAlocacao">
+      <q-card style="min-width: 500px; max-width: 90vw">
+        <q-card-section>
+          <div class="text-h6">Trocar colaborador da vaga</div>
+
+          <div v-if="vagaEmEdicao" class="text-subtitle2 text-grey-7 q-mt-sm">
+            Vaga de {{ vagaEmEdicao.funcao_er }} — ocupada por
+            {{ vagaEmEdicao.colaborador?.chapa }} -
+            {{ vagaEmEdicao.colaborador?.nome }}
+          </div>
+        </q-card-section>
+
+        <q-separator />
+
+        <q-card-section>
+          <q-select
+            v-model="colaboradorNovoEdicao"
+            :options="colaboradoresLivresAlocacao"
+            label="Novo colaborador"
+            outlined
+            dense
+            use-input
+            clearable
+            option-label="nome"
+            input-debounce="0"
+            hint="Pesquise pelo nome ou pela CHAPA"
+            @filter="filtrarColaboradoresAlocacao"
+          >
+            <template #option="scope">
+              <q-item v-bind="scope.itemProps">
+                <q-item-section>
+                  <q-item-label>{{ scope.opt.nome }}</q-item-label>
+                  <q-item-label caption>
+                    CHAPA: {{ scope.opt.chapa }} |
+                    {{ scope.opt.funcao || 'Função não informada' }}
+                  </q-item-label>
+                </q-item-section>
+              </q-item>
+            </template>
+          </q-select>
+        </q-card-section>
+
+        <q-card-actions align="right">
+          <q-btn flat label="Cancelar" v-close-popup />
+
+          <q-btn
+            color="primary"
+            label="Trocar"
+            :loading="salvandoEdicaoAlocacao"
+            :disable="!colaboradorNovoEdicao"
+            @click="salvarEdicaoAlocacao()"
+          />
+        </q-card-actions>
+      </q-card>
+    </q-dialog>
+
+    <!-- ================================================== -->
+    <!-- FOLGUISTA EXTRA -->
+    <!-- ================================================== -->
+
+    <q-dialog v-model="dialogFolguistaExtra">
+      <q-card style="min-width: 500px; max-width: 90vw">
+        <q-card-section>
+          <div class="text-h6">Adicionar Folguista Extra</div>
+
+          <div class="text-caption text-grey-7 q-mt-sm">
+            Equipe {{ equipeFolguistaExtra?.prefixo }} — não altera a quantidade
+            padrão de folguistas, só adiciona uma alocação extra sinalizada.
+          </div>
+        </q-card-section>
+
+        <q-separator />
+
+        <q-card-section>
+          <q-select
+            v-model="colaboradorExtra"
+            :options="colaboradoresLivresAlocacao"
+            label="Colaborador"
+            outlined
+            dense
+            use-input
+            clearable
+            option-label="nome"
+            input-debounce="0"
+            class="q-mb-md"
+            hint="Pesquise pelo nome ou pela CHAPA"
+            @filter="filtrarColaboradoresAlocacao"
+          >
+            <template #option="scope">
+              <q-item v-bind="scope.itemProps">
+                <q-item-section>
+                  <q-item-label>{{ scope.opt.nome }}</q-item-label>
+                  <q-item-label caption>
+                    CHAPA: {{ scope.opt.chapa }} |
+                    {{ scope.opt.funcao || 'Função não informada' }}
+                  </q-item-label>
+                </q-item-section>
+              </q-item>
+            </template>
+          </q-select>
+
+          <q-input
+            v-model="funcaoExtra"
+            label="Função"
+            outlined
+            dense
+            class="q-mb-md"
+            hint="Ex.: ELETRICISTA, PODADOR..."
+          />
+
+          <q-select
+            v-model="setorExtra"
+            :options="setoresNegocio"
+            label="Setor"
+            outlined
+            dense
+          />
+        </q-card-section>
+
+        <q-card-actions align="right">
+          <q-btn flat label="Cancelar" v-close-popup />
+
+          <q-btn
+            color="primary"
+            label="Adicionar"
+            :loading="salvandoFolguistaExtra"
+            :disable="!colaboradorExtra || !funcaoExtra || !setorExtra"
+            @click="salvarFolguistaExtra()"
+          />
+        </q-card-actions>
+      </q-card>
+    </q-dialog>
+
+    <!-- ================================================== -->
+    <!-- ALOCAÇÃO EM MASSA POR PLANILHA -->
+    <!-- ================================================== -->
+
+    <q-dialog v-model="dialogPlanilhaAlocacoes">
+      <q-card style="min-width: 600px; max-width: 95vw">
+        <q-card-section class="row items-center">
+          <div class="text-h6">Alocação em massa por planilha</div>
+          <q-space />
+          <q-btn v-close-popup flat round dense icon="close" />
+        </q-card-section>
+
+        <q-separator />
+
+        <q-card-section>
+          <div class="q-mb-md">
+            <q-btn
+              outline
+              dense
+              color="primary"
+              icon="download"
+              label="Baixar planilha atual"
+              @click="baixarPlanilhaAlocacoes"
+            />
+          </div>
+
+          <q-file
+            v-model="arquivoPlanilhaAlocacoes"
+            label="Selecionar planilha preenchida (.xlsx)"
+            outlined
+            dense
+            accept=".xlsx"
+            @update:model-value="planoAlocacoes = null"
+          >
+            <template #prepend>
+              <q-icon name="attach_file" />
+            </template>
+          </q-file>
+
+          <div class="text-caption text-grey-7 q-mt-sm">
+            Preencha a coluna AÇÃO com <strong>alocar</strong>,
+            <strong>editar</strong> (troca o colaborador da vaga) ou
+            <strong>remover</strong>. Linha sem ação é ignorada.
+          </div>
+
+          <div class="row q-gutter-sm q-mt-md">
+            <q-btn
+              color="primary"
+              label="Analisar planilha"
+              :disable="!arquivoPlanilhaAlocacoes"
+              :loading="analisandoPlanilha"
+              @click="enviarPreviaAlocacoes"
+            />
+          </div>
+
+          <div v-if="planoAlocacoes" class="q-mt-md">
+            <div class="row q-gutter-sm q-mb-sm">
+              <q-chip color="primary" text-color="white">
+                {{ planoAlocacoes.alocar?.length || 0 }} para alocar
+              </q-chip>
+              <q-chip color="negative" text-color="white">
+                {{ planoAlocacoes.remover?.length || 0 }} para remover
+              </q-chip>
+              <q-chip color="grey-7" text-color="white">
+                {{ planoAlocacoes.ignoradas || 0 }} ignoradas
+              </q-chip>
+            </div>
+
+            <q-banner
+              v-if="planoAlocacoes.erros?.length"
+              class="bg-red-1 text-negative q-mb-sm"
+              rounded
+            >
+              <div class="text-weight-medium q-mb-xs">
+                {{ planoAlocacoes.erros.length }} linha(s) com problema:
+              </div>
+              <div v-for="(item, indice) in planoAlocacoes.erros" :key="indice">
+                Linha {{ item.linha }} ({{ item.equipe }}): {{ item.erro }}
+              </div>
+            </q-banner>
+
+            <q-banner
+              v-if="conflitosPendentes.length"
+              class="bg-orange-1 text-orange-9 q-mb-sm"
+              rounded
+            >
+              <div class="text-weight-medium q-mb-xs">
+                Colaborador já alocado em outra equipe — confirme a transferência:
+              </div>
+              <div
+                v-for="item in conflitosPendentes"
+                :key="item.chapa"
+                class="row items-center q-py-xs"
+              >
+                <q-checkbox
+                  :model-value="conflitosConfirmados.has(item.chapa)"
+                  :label="`${item.chapa} - ${item.nome} (estava em ${item.alocacao_atual?.equipe || '?'})`"
+                  @update:model-value="alternarConflito(item.chapa)"
+                />
+              </div>
+            </q-banner>
+
+            <q-btn
+              color="positive"
+              label="Aplicar mudanças"
+              :disable="
+                !!planoAlocacoes.erros?.length ||
+                conflitosPendentes.some(item => !conflitosConfirmados.has(item.chapa))
+              "
+              :loading="aplicandoPlanilha"
+              @click="aplicarPlanilhaAlocacoes"
+            />
+          </div>
+        </q-card-section>
+      </q-card>
+    </q-dialog>
   </q-layout>
 </template>
 
@@ -515,6 +845,8 @@ const erro = ref('')
 const baseSelecionada = ref([])
 const tipoSelecionado = ref(TIPO_TODOS)
 const setorSelecionado = ref(SETOR_TODOS)
+const filtroEquipe = ref('')
+const situacaoAlocacao = ref('TODAS')
 const limpandoAlocacoes = ref(false)
 
 const filtroColaborador = ref('')
@@ -529,6 +861,33 @@ const carregandoAlocacao = ref(false)
 const baseAlocacao = ref(null)
 const equipeAlocacao = ref(null)
 const vagaAlocacao = ref(null)
+
+// Editar alocação (trocar colaborador de uma vaga ocupada)
+const dialogEdicaoAlocacao = ref(false)
+const vagaEmEdicao = ref(null)
+const colaboradorNovoEdicao = ref(null)
+const salvandoEdicaoAlocacao = ref(false)
+
+// Folguista Extra
+const dialogFolguistaExtra = ref(false)
+const equipeFolguistaExtra = ref(null)
+const colaboradorExtra = ref(null)
+const funcaoExtra = ref('')
+const setorExtra = ref(null)
+const salvandoFolguistaExtra = ref(false)
+const setoresNegocio = ref([])
+
+// Alocação em massa por planilha
+const dialogPlanilhaAlocacoes = ref(false)
+const arquivoPlanilhaAlocacoes = ref(null)
+const analisandoPlanilha = ref(false)
+const aplicandoPlanilha = ref(false)
+const planoAlocacoes = ref(null)
+const conflitosConfirmados = ref(new Set())
+
+const conflitosPendentes = computed(() =>
+  (planoAlocacoes.value?.alocar || []).filter(item => item.conflito)
+)
 
 const basesAlocacao = computed(() => {
   return Object.keys(opcoesAlocacao.value)
@@ -577,8 +936,14 @@ const vagasAlocacao = computed(() => {
 // BASES
 // ============================================================
 
+// Folguista Extra nao entra no calculo de completude: a equipe e considerada
+// completa/incompleta so pelas vagas padrao dela.
+function vagasPadrao(equipe) {
+  return (equipe.vagas || []).filter(vaga => !vaga.eh_extra)
+}
+
 function equipePreenchida(equipe) {
-  const vagas = equipe.vagas || []
+  const vagas = vagasPadrao(equipe)
 
   return vagas.length > 0 && vagas.every(vaga => Boolean(vaga.colaborador))
 }
@@ -653,11 +1018,35 @@ const equipesFiltradas = computed(() => {
           return baseSelecionada.value.includes(base)
         })
 
-  const equipesVisiveis = visiveisPorBase.filter(
-    equipe =>
-      equipeCombinaComTipo(equipe, tipoSelecionado.value) &&
-      equipeCombinaComSetor(equipe, setorSelecionado.value)
-  )
+  const textoBusca = filtroEquipe.value.trim().toLowerCase()
+
+  const equipesVisiveis = visiveisPorBase.filter(equipe => {
+    if (
+      !equipeCombinaComTipo(equipe, tipoSelecionado.value) ||
+      !equipeCombinaComSetor(equipe, setorSelecionado.value)
+    ) {
+      return false
+    }
+
+    if (textoBusca) {
+      const alvo = `${equipe.prefixo || ''} ${equipe.base || ''}`.toLowerCase()
+      if (!alvo.includes(textoBusca)) {
+        return false
+      }
+    }
+
+    if (situacaoAlocacao.value !== 'TODAS') {
+      const completa = equipePreenchida(equipe)
+      if (situacaoAlocacao.value === 'COMPLETAS' && !completa) {
+        return false
+      }
+      if (situacaoAlocacao.value === 'INCOMPLETAS' && completa) {
+        return false
+      }
+    }
+
+    return true
+  })
 
   return [...equipesVisiveis].sort((a, b) => {
     const baseA = String(a.base || '').trim()
@@ -860,6 +1249,244 @@ function limparVagaAlocacao() {
   vagaAlocacao.value = null
 }
 
+// ============================================================
+// EDITAR ALOCAÇÃO (TROCAR COLABORADOR)
+// ============================================================
+
+function abrirEdicaoAlocacao(vaga) {
+  vagaEmEdicao.value = vaga
+  colaboradorNovoEdicao.value = null
+  colaboradoresLivresAlocacao.value = colaboradores.value.filter(
+    item => !item.alocado
+  )
+  dialogEdicaoAlocacao.value = true
+}
+
+async function salvarEdicaoAlocacao(confirmarTransferencia = false) {
+  if (!vagaEmEdicao.value || !colaboradorNovoEdicao.value) {
+    return
+  }
+
+  salvandoEdicaoAlocacao.value = true
+
+  try {
+    const resposta = await fetch('/api/equipes/editar-alocacao', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        composicao_id: vagaEmEdicao.value.id,
+        chapa: colaboradorNovoEdicao.value.chapa,
+        confirmar_transferencia: confirmarTransferencia
+      })
+    })
+
+    const dados = await resposta.json()
+
+    if (resposta.status === 409 && dados.conflito) {
+      const atual = dados.alocacao_atual || {}
+      const descricaoAtual = atual.equipe
+        ? `na equipe ${atual.equipe} (${atual.base || ''})`
+        : 'em outra equipe'
+
+      if (
+        window.confirm(
+          `${dados.mensagem}\nEstá ${descricaoAtual}.\n\n` +
+            'Deseja transferir o colaborador para esta vaga mesmo assim?'
+        )
+      ) {
+        return await salvarEdicaoAlocacao(true)
+      }
+      return
+    }
+
+    if (!resposta.ok || dados.erro) {
+      throw new Error(dados.erro || 'Erro ao trocar o colaborador.')
+    }
+
+    dialogEdicaoAlocacao.value = false
+    vagaEmEdicao.value = null
+    colaboradorNovoEdicao.value = null
+
+    await carregarDados()
+  } catch (e) {
+    erro.value = e.message || 'Erro ao trocar o colaborador.'
+  } finally {
+    salvandoEdicaoAlocacao.value = false
+  }
+}
+
+// ============================================================
+// FOLGUISTA EXTRA
+// ============================================================
+
+function abrirFolguistaExtra(equipe) {
+  equipeFolguistaExtra.value = equipe
+  colaboradorExtra.value = null
+  funcaoExtra.value = ''
+  setorExtra.value = null
+  colaboradoresLivresAlocacao.value = colaboradores.value.filter(
+    item => !item.alocado
+  )
+  dialogFolguistaExtra.value = true
+}
+
+async function salvarFolguistaExtra(confirmarTransferencia = false) {
+  if (!equipeFolguistaExtra.value || !colaboradorExtra.value || !funcaoExtra.value || !setorExtra.value) {
+    return
+  }
+
+  salvandoFolguistaExtra.value = true
+
+  try {
+    const resposta = await fetch(
+      `/api/equipes/${equipeFolguistaExtra.value.id}/folguista-extra`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          funcao_er: funcaoExtra.value,
+          chapa: colaboradorExtra.value.chapa,
+          setor: setorExtra.value,
+          confirmar_transferencia: confirmarTransferencia
+        })
+      }
+    )
+
+    const dados = await resposta.json()
+
+    if (resposta.status === 409 && dados.conflito) {
+      const atual = dados.alocacao_atual || {}
+      const descricaoAtual = atual.equipe
+        ? `na equipe ${atual.equipe} (${atual.base || ''})`
+        : 'em outra equipe'
+
+      if (
+        window.confirm(
+          `${dados.mensagem}\nEstá ${descricaoAtual}.\n\n` +
+            'Deseja transferir o colaborador para o Folguista Extra desta equipe?'
+        )
+      ) {
+        return await salvarFolguistaExtra(true)
+      }
+      return
+    }
+
+    if (!resposta.ok || dados.erro) {
+      throw new Error(dados.erro || 'Erro ao adicionar Folguista Extra.')
+    }
+
+    dialogFolguistaExtra.value = false
+    await carregarDados()
+  } catch (e) {
+    erro.value = e.message || 'Erro ao adicionar Folguista Extra.'
+  } finally {
+    salvandoFolguistaExtra.value = false
+  }
+}
+
+// ============================================================
+// ALOCAÇÃO EM MASSA POR PLANILHA
+// ============================================================
+
+function abrirPlanilhaAlocacoes() {
+  arquivoPlanilhaAlocacoes.value = null
+  planoAlocacoes.value = null
+  conflitosConfirmados.value = new Set()
+  dialogPlanilhaAlocacoes.value = true
+}
+
+function baixarPlanilhaAlocacoes() {
+  window.location.href = '/api/alocacoes/planilha'
+}
+
+function alternarConflito(chapa) {
+  const novo = new Set(conflitosConfirmados.value)
+  if (novo.has(chapa)) {
+    novo.delete(chapa)
+  } else {
+    novo.add(chapa)
+  }
+  conflitosConfirmados.value = novo
+}
+
+async function enviarPreviaAlocacoes() {
+  if (!arquivoPlanilhaAlocacoes.value) {
+    return
+  }
+
+  analisandoPlanilha.value = true
+  erro.value = ''
+
+  try {
+    const formData = new FormData()
+    formData.append('arquivo', arquivoPlanilhaAlocacoes.value)
+
+    const resposta = await fetch('/api/alocacoes/planilha/previa', {
+      method: 'POST',
+      body: formData
+    })
+
+    const dados = await resposta.json()
+
+    if (!resposta.ok || (dados.erro && !dados.alocar)) {
+      throw new Error(dados.erro || 'Erro ao analisar a planilha.')
+    }
+
+    planoAlocacoes.value = dados
+    conflitosConfirmados.value = new Set()
+  } catch (e) {
+    erro.value = e.message || 'Erro ao analisar a planilha.'
+  } finally {
+    analisandoPlanilha.value = false
+  }
+}
+
+async function aplicarPlanilhaAlocacoes() {
+  if (!arquivoPlanilhaAlocacoes.value || !planoAlocacoes.value) {
+    return
+  }
+
+  aplicandoPlanilha.value = true
+  erro.value = ''
+
+  try {
+    const formData = new FormData()
+    formData.append('arquivo', arquivoPlanilhaAlocacoes.value)
+    for (const chapa of conflitosConfirmados.value) {
+      formData.append('confirmar_conflitos', chapa)
+    }
+
+    const resposta = await fetch('/api/alocacoes/planilha/aplicar', {
+      method: 'POST',
+      body: formData
+    })
+
+    const dados = await resposta.json()
+
+    if (!resposta.ok || dados.erro) {
+      planoAlocacoes.value = dados.plano || planoAlocacoes.value
+      throw new Error(dados.erro || 'Erro ao aplicar a planilha.')
+    }
+
+    dialogPlanilhaAlocacoes.value = false
+    await carregarDados()
+  } catch (e) {
+    erro.value = e.message || 'Erro ao aplicar a planilha.'
+  } finally {
+    aplicandoPlanilha.value = false
+  }
+}
+
+async function carregarSetoresNegocio() {
+  try {
+    const resposta = await fetch('/api/sessao')
+    const dados = await resposta.json()
+    setoresNegocio.value = dados.setores_negocio || []
+  } catch (e) {
+    console.error(e)
+  }
+}
+
 function localizarVaga(composicaoId) {
   for (const equipe of equipes.value) {
     const vaga = (equipe.vagas || []).find(
@@ -924,7 +1551,7 @@ function atualizarEstadoAposRemocao(chapa, composicaoId) {
   }
 }
 
-async function alocarColaborador() {
+async function alocarColaborador(confirmarTransferencia = false) {
   if (!colaboradorSelecionado.value || !vagaAlocacao.value) {
     return
   }
@@ -940,11 +1567,30 @@ async function alocarColaborador() {
       },
       body: JSON.stringify({
         composicao_id: vagaAlocacao.value,
-        chapa: colaboradorSelecionado.value.chapa
+        chapa: colaboradorSelecionado.value.chapa,
+        confirmar_transferencia: confirmarTransferencia
       })
     })
 
     const dados = await resposta.json()
+
+    if (resposta.status === 409 && dados.conflito) {
+      const atual = dados.alocacao_atual || {}
+      const descricaoAtual = atual.equipe
+        ? `na equipe ${atual.equipe} (${atual.base || ''}), vaga ${atual.funcao_er || ''}`
+        : 'em outra equipe'
+
+      if (
+        window.confirm(
+          `${dados.mensagem || 'Este colaborador já está alocado em outra equipe.'}\n` +
+            `Está ${descricaoAtual}.\n\n` +
+            'Deseja transferir o colaborador para esta nova vaga?'
+        )
+      ) {
+        return await alocarColaborador(true)
+      }
+      return
+    }
 
     if (!resposta.ok || dados.erro) {
       throw new Error(dados.erro || 'Erro ao alocar colaborador.')
@@ -956,7 +1602,7 @@ async function alocarColaborador() {
     equipeAlocacao.value = null
     vagaAlocacao.value = null
 
-    atualizarEstadoAposAlocacao(composicaoId, dados.colaborador)
+    await carregarDados()
   } catch (e) {
     erro.value = e.message || 'Erro ao alocar colaborador.'
   } finally {
@@ -1071,6 +1717,7 @@ async function liberarEquipe(equipe) {
 // ============================================================
 
 onMounted(() => {
+  carregarSetoresNegocio()
   carregarDados().then(() => {
     try {
       const filtroSalvo = JSON.parse(

@@ -65,6 +65,19 @@
                 />
               </div>
 
+              <div class="col-12 col-md-2">
+                <q-select
+                  v-model="setorSelecionado"
+                  :options="opcoesSetores"
+                  label="Setor"
+                  outlined
+                  dense
+                  emit-value
+                  map-options
+                  @update:model-value="carregarResumo"
+                />
+              </div>
+
               <div class="col-auto">
                 <div class="row q-gutter-xs">
                   <q-chip
@@ -146,7 +159,7 @@
                     </div>
 
                     <div class="text-caption">
-                      Código: {{ base.codigo }} · {{ base.equipes }} equipe(s)
+                      {{ base.codigo }} · {{ base.equipes }} equipe(s)
                     </div>
                   </div>
 
@@ -243,206 +256,308 @@
           <!-- ================================================= -->
 
           <div class="col-12 resumo-lateral">
-            <div class="text-overline text-primary text-weight-bold q-mb-sm">
-              Indicadores gerais
+            <div class="row items-center justify-between q-mb-sm">
+              <div class="text-overline text-primary text-weight-bold">
+                Indicadores gerais
+              </div>
+
+              <q-btn-toggle
+                v-model="visaoIndicadores"
+                dense
+                no-caps
+                unelevated
+                toggle-color="primary"
+                color="grey-3"
+                text-color="grey-8"
+                :options="[
+                  { label: 'Indicadores', value: 'cards' },
+                  { label: 'Composição', value: 'tabela' }
+                ]"
+              />
             </div>
 
-            <q-card bordered>
-              <q-card-section>
-                <div class="text-h6 q-mb-md">Total geral</div>
+            <transition name="fade" mode="out-in">
+              <div v-if="visaoIndicadores === 'cards'" key="cards">
+                <q-card bordered class="card-total-compacto">
+                  <q-card-section>
+                    <div class="text-h6 q-mb-md">Total geral</div>
 
-                <div class="row q-col-gutter-md">
-                  <div
-                    v-for="indicador in indicadoresFuncoes"
-                    :key="indicador.funcao"
-                    class="col-12 col-sm-6"
-                  >
-                    <q-card
-                      flat
-                      bordered
-                      class="cursor-pointer"
-                      :class="
-                        indicador.diferenca < 0 ? 'bg-red-1' : 'bg-green-1'
-                      "
-                      @click="
-                        abrirNecessidades(
-                          indicador.funcao,
-                          '',
-                          indicador.diferenca < 0 ? 'deficit' : 'superavit'
-                        )
-                      "
-                    >
-                      <q-card-section>
-                        <div class="text-caption text-grey-8">
-                          {{ indicador.funcao }}
-                        </div>
-
-                        <div
-                          class="text-h6"
+                    <div class="row q-col-gutter-sm">
+                      <div
+                        v-for="indicador in indicadoresFuncoes"
+                        :key="indicador.funcao"
+                        class="col-12 col-sm-6"
+                      >
+                        <q-card
+                          flat
+                          bordered
+                          class="cursor-pointer indicador-compacto"
                           :class="
-                            indicador.diferenca < 0
-                              ? 'text-negative'
-                              : 'text-positive'
+                            indicador.diferenca < 0 ? 'bg-red-1' : 'bg-green-1'
+                          "
+                          @click="
+                            abrirNecessidades(
+                              indicador.funcao,
+                              '',
+                              indicador.diferenca < 0 ? 'deficit' : 'superavit'
+                            )
                           "
                         >
-                          {{
-                            indicador.diferenca < 0 ? 'Déficit' : 'Superávit'
-                          }}:
-                          {{ indicador.diferenca }}
-                        </div>
-                      </q-card-section>
-                    </q-card>
-                  </div>
-                </div>
+                          <q-card-section>
+                            <div class="text-caption text-grey-8">
+                              {{ indicador.funcao }}
+                            </div>
 
-                <!-- ============================================= -->
-                <!-- DIFERENÇA TOTAL -->
-                <!-- ============================================= -->
+                            <div
+                              class="text-h6"
+                              :class="
+                                indicador.diferenca < 0
+                                  ? 'text-negative'
+                                  : 'text-positive'
+                              "
+                            >
+                              {{
+                                indicador.diferenca < 0 ? 'Déficit' : 'Superávit'
+                              }}:
+                              {{ indicador.diferenca }}
+                            </div>
+                          </q-card-section>
+                        </q-card>
+                      </div>
+                    </div>
 
-                <div class="row justify-center q-mt-lg">
-                  <q-chip
-                    :color="
-                      totalExibido.diferenca < 0
-                        ? 'negative'
-                        : totalExibido.diferenca > 0
-                          ? 'positive'
-                          : 'grey-6'
-                    "
-                    text-color="white"
-                    size="lg"
-                  >
-                    DIFERENÇA TOTAL:
-                    {{ totalExibido.diferenca }}
-                  </q-chip>
-                </div>
-              </q-card-section>
-            </q-card>
+                    <!-- ============================================= -->
+                    <!-- DIFERENÇA TOTAL -->
+                    <!-- ============================================= -->
 
-            <q-card bordered class="q-mt-lg">
-              <q-card-section>
-                <div class="text-h6 q-mb-md">Pessoas alocadas</div>
-
-                <q-table
-                  flat
-                  bordered
-                  :rows="linhasDisponiveis"
-                  :columns="colunasDisponiveis"
-                  row-key="funcao"
-                  hide-pagination
-                  :rows-per-page-options="[0]"
-                >
-                  <template #body="props">
-                    <q-tr :props="props">
-                      <q-td key="funcao" :props="props">
-                        <q-btn
-                          flat
-                          dense
-                          color="primary"
-                          class="text-weight-medium"
-                          :label="props.row.funcao"
-                          @click="abrirDetalhes(props.row.funcao)"
-                        />
-                      </q-td>
-
-                      <q-td
-                        v-for="base in pessoasDisponiveisFiltradas"
-                        :key="base.codigo"
-                        :props="props"
-                        class="text-center"
+                    <div class="row justify-center q-mt-lg">
+                      <q-chip
+                        :color="
+                          totalExibido.diferenca < 0
+                            ? 'negative'
+                            : totalExibido.diferenca > 0
+                              ? 'positive'
+                              : 'grey-6'
+                        "
+                        text-color="white"
+                        size="lg"
                       >
-                        <q-btn
-                          v-if="props.row[base.codigo]"
-                          flat
-                          dense
-                          color="primary"
-                          :label="String(props.row[base.codigo])"
-                          @click="abrirDetalhes(props.row.funcao, base.codigo)"
-                        />
+                        DIFERENÇA TOTAL:
+                        {{ totalExibido.diferenca }}
+                      </q-chip>
+                    </div>
+                  </q-card-section>
+                </q-card>
 
-                        <span v-else>0</span>
-                      </q-td>
+                <q-card bordered class="q-mt-lg">
+                  <q-card-section>
+                    <div class="text-h6 q-mb-md">Pessoas alocadas</div>
 
-                      <q-td key="total" :props="props" class="text-center">
-                        <q-btn
-                          v-if="props.row.total"
-                          flat
-                          dense
-                          color="primary"
-                          :label="String(props.row.total)"
-                          @click="abrirDetalhes(props.row.funcao)"
-                        />
+                    <q-table
+                      flat
+                      bordered
+                      :rows="linhasDisponiveis"
+                      :columns="colunasDisponiveis"
+                      row-key="funcao"
+                      hide-pagination
+                      :rows-per-page-options="[0]"
+                    >
+                      <template #body="props">
+                        <q-tr :props="props">
+                          <q-td key="funcao" :props="props">
+                            <q-btn
+                              flat
+                              dense
+                              color="primary"
+                              class="text-weight-medium"
+                              :label="props.row.funcao"
+                              @click="abrirDetalhes(props.row.funcao)"
+                            />
+                          </q-td>
 
-                        <span v-else>0</span>
-                      </q-td>
-                    </q-tr>
-                  </template>
-                </q-table>
-              </q-card-section>
-            </q-card>
+                          <q-td
+                            v-for="base in pessoasDisponiveisFiltradas"
+                            :key="base.codigo"
+                            :props="props"
+                            class="text-center"
+                          >
+                            <q-btn
+                              v-if="props.row[base.codigo]"
+                              flat
+                              dense
+                              color="primary"
+                              :label="String(props.row[base.codigo])"
+                              @click="abrirDetalhes(props.row.funcao, base.codigo)"
+                            />
 
-            <q-card bordered class="q-mt-lg">
-              <q-card-section>
-                <div class="text-h6 q-mb-md">Pessoas não alocadas</div>
+                            <span v-else>0</span>
+                          </q-td>
 
-                <q-table
-                  flat
+                          <q-td key="total" :props="props" class="text-center">
+                            <q-btn
+                              v-if="props.row.total"
+                              flat
+                              dense
+                              color="primary"
+                              :label="String(props.row.total)"
+                              @click="abrirDetalhes(props.row.funcao)"
+                            />
+
+                            <span v-else>0</span>
+                          </q-td>
+                        </q-tr>
+                      </template>
+                    </q-table>
+                  </q-card-section>
+                </q-card>
+
+                <q-card bordered class="q-mt-lg">
+                  <q-card-section>
+                    <div class="text-h6 q-mb-md">Pessoas não alocadas</div>
+
+                    <q-table
+                      flat
+                      bordered
+                      :rows="linhasNaoAlocadas"
+                      :columns="colunasNaoAlocadas"
+                      row-key="funcao"
+                      hide-pagination
+                      :rows-per-page-options="[0]"
+                    >
+                      <template #body="props">
+                        <q-tr :props="props">
+                          <q-td key="funcao" :props="props">
+                            <q-btn
+                              flat
+                              dense
+                              color="primary"
+                              class="text-weight-medium"
+                              :label="props.row.funcao"
+                              @click="abrirNaoAlocados(props.row.funcao)"
+                            />
+                          </q-td>
+
+                          <q-td
+                            v-for="base in basesExibidas"
+                            :key="base.codigo"
+                            :props="props"
+                            class="text-center"
+                          >
+                            <q-btn
+                              v-if="props.row[base.codigo]"
+                              flat
+                              dense
+                              color="primary"
+                              :label="String(props.row[base.codigo])"
+                              @click="
+                                abrirNaoAlocados(props.row.funcao, base.codigo)
+                              "
+                            />
+
+                            <span v-else>0</span>
+                          </q-td>
+
+                          <q-td key="total" :props="props" class="text-center">
+                            <q-btn
+                              v-if="props.row.total"
+                              flat
+                              dense
+                              color="primary"
+                              :label="String(props.row.total)"
+                              @click="abrirNaoAlocados(props.row.funcao)"
+                            />
+
+                            <span v-else>0</span>
+                          </q-td>
+                        </q-tr>
+                      </template>
+                    </q-table>
+                  </q-card-section>
+                </q-card>
+              </div>
+
+              <div v-else key="tabela">
+                <q-card
+                  v-for="base in basesExibidas"
+                  :key="base.codigo"
                   bordered
-                  :rows="linhasNaoAlocadas"
-                  :columns="colunasNaoAlocadas"
-                  row-key="funcao"
-                  hide-pagination
-                  :rows-per-page-options="[0]"
+                  class="q-mb-md"
                 >
-                  <template #body="props">
-                    <q-tr :props="props">
-                      <q-td key="funcao" :props="props">
-                        <q-btn
-                          flat
-                          dense
-                          color="primary"
-                          class="text-weight-medium"
-                          :label="props.row.funcao"
-                          @click="abrirNaoAlocados(props.row.funcao)"
-                        />
-                      </q-td>
+                  <q-card-section>
+                    <div class="text-h6">{{ base.base }}</div>
+                    <div class="text-caption">
+                      {{ base.codigo }} · {{ base.equipes }} equipe(s)
+                    </div>
+                  </q-card-section>
 
-                      <q-td
-                        v-for="base in basesExibidas"
-                        :key="base.codigo"
-                        :props="props"
-                        class="text-center"
-                      >
-                        <q-btn
-                          v-if="props.row[base.codigo]"
-                          flat
-                          dense
-                          color="primary"
-                          :label="String(props.row[base.codigo])"
-                          @click="
-                            abrirNaoAlocados(props.row.funcao, base.codigo)
-                          "
-                        />
+                  <q-separator />
 
-                        <span v-else>0</span>
-                      </q-td>
+                  <q-card-section class="q-pa-none">
+                    <q-markup-table flat square class="tabela-resumo">
+                      <thead>
+                        <tr>
+                          <th class="text-left">Equipe</th>
+                          <th class="text-left">Função</th>
+                          <th class="text-center">Vagas</th>
+                          <th class="text-center">Alocados</th>
+                          <th class="text-center">Diferença</th>
+                        </tr>
+                      </thead>
 
-                      <q-td key="total" :props="props" class="text-center">
-                        <q-btn
-                          v-if="props.row.total"
-                          flat
-                          dense
-                          color="primary"
-                          :label="String(props.row.total)"
-                          @click="abrirNaoAlocados(props.row.funcao)"
-                        />
+                      <tbody>
+                        <template v-for="grupo in base.grupos" :key="grupo.rotulo">
+                          <tr
+                            v-for="(linha, indice) in grupo.funcoes"
+                            :key="grupo.rotulo + '-' + linha.funcao"
+                            :class="{ 'inicio-grupo': indice === 0 }"
+                          >
+                            <td
+                              v-if="indice === 0"
+                              :rowspan="grupo.funcoes.length"
+                              class="celula-grupo"
+                              :style="{ '--cor-grupo': corDoTipo(grupo) }"
+                            >
+                              <span class="grupo-rotulo">{{ grupo.rotulo }}</span>
+                              <span class="grupo-detalhe">
+                                {{ grupo.equipes }} equipe(s) · {{ grupo.vagas }} vaga(s)
+                              </span>
+                            </td>
 
-                        <span v-else>0</span>
-                      </q-td>
-                    </q-tr>
-                  </template>
-                </q-table>
-              </q-card-section>
-            </q-card>
+                            <td class="text-left text-weight-medium">
+                              {{ linha.funcao }}
+                            </td>
+                            <td class="text-center">{{ linha.vagas }}</td>
+                            <td class="text-center">
+                              <q-btn
+                                v-if="linha.alocados"
+                                flat
+                                dense
+                                color="primary"
+                                :label="String(linha.alocados)"
+                                @click="abrirDetalhes(linha.funcao, base.codigo)"
+                              />
+                              <span v-else>0</span>
+                            </td>
+                            <td class="text-center">
+                              <span
+                                class="marcador-diferenca"
+                                :class="linha.diferenca < 0 ? 'negativa' : 'neutra'"
+                              >
+                                {{ linha.diferenca }}
+                              </span>
+                            </td>
+                          </tr>
+                        </template>
+                      </tbody>
+                    </q-markup-table>
+                  </q-card-section>
+                </q-card>
+
+                <div v-if="!basesExibidas.length" class="text-center text-grey-6 q-pa-md">
+                  Nenhum dado para os filtros atuais.
+                </div>
+              </div>
+            </transition>
 
             <q-dialog v-model="detalhesAbertos">
               <q-card class="detalhes-disponiveis tabela-alocados">
@@ -575,6 +690,10 @@ const basesFiltro = ref([])
 const baseSelecionada = ref([])
 const tipoSelecionado = ref('')
 const tiposFiltro = ref([])
+const setorSelecionado = ref('')
+const setoresFiltro = ref([])
+
+const visaoIndicadores = ref('cards')
 
 const carregando = ref(false)
 
@@ -616,6 +735,11 @@ const necessidadeSelecionada = ref({
 const opcoesTipos = computed(() => [
   { label: 'Todos os tipos', value: '' },
   ...tiposFiltro.value.map(tipo => ({ label: tipo.toUpperCase(), value: tipo }))
+])
+
+const opcoesSetores = computed(() => [
+  { label: 'Todos os setores', value: '' },
+  ...setoresFiltro.value.map(setor => ({ label: setor, value: setor }))
 ])
 
 const opcoesBases = computed(() => {
@@ -1163,6 +1287,9 @@ async function carregarResumo() {
     if (tipoSelecionado.value) {
       parametros.set('tipo', tipoSelecionado.value)
     }
+    if (setorSelecionado.value) {
+      parametros.set('setor', setorSelecionado.value)
+    }
 
     const resposta = await fetch(`/api/resumo?${parametros}`)
 
@@ -1180,6 +1307,7 @@ async function carregarResumo() {
 
     basesFiltro.value = dados.bases_filtro || []
     tiposFiltro.value = dados.tipos_filtro || []
+    setoresFiltro.value = dados.setores_filtro || []
 
     pessoasDisponiveis.value = dados.pessoas_disponiveis || []
 
@@ -1341,14 +1469,45 @@ watch(
 
 .resumo-page :deep(.q-table th),
 .resumo-page :deep(.q-table td) {
-  padding: 3px 5px;
-  line-height: 1.15;
+  padding: 3px 4px;
+  line-height: 1.09;
 }
 
 .resumo-lateral :deep(.q-table th),
 .resumo-lateral :deep(.q-table td) {
-  padding: 2px 4px !important;
-  line-height: 1.1 !important;
+  padding: 2px 3px !important;
+  line-height: 1.05 !important;
+}
+
+/* Total geral: cards mais compactos, sem perder legibilidade */
+.card-total-compacto > :deep(.q-card__section) {
+  padding: 10px;
+}
+
+.indicador-compacto :deep(.q-card__section) {
+  padding: 6px 8px;
+}
+
+.indicador-compacto :deep(.text-h6) {
+  font-size: 1.05rem;
+}
+
+/* transicao entre a visao de indicadores e a tabela-resumo */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.2s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fade-enter-active,
+  .fade-leave-active {
+    transition: none;
+  }
 }
 
 .resumo-page :deep(.text-h5) {

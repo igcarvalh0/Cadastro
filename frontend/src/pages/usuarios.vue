@@ -37,7 +37,9 @@
 
             <div class="text-caption text-grey-7">
               O nível define <strong>o que</strong> a pessoa pode fazer. Os
-              vínculos definem <strong>sobre quais equipes</strong>.
+              vínculos definem <strong>sobre quais equipes</strong>. Marque ou
+              desmarque as permissões de Supervisor e Analista e clique em
+              Salvar na linha — o Administrador sempre tem acesso total.
             </div>
           </q-card-section>
 
@@ -55,6 +57,7 @@
                   >
                     {{ permissao.rotulo }}
                   </th>
+                  <th class="text-center">Ações</th>
                 </tr>
               </thead>
 
@@ -72,13 +75,36 @@
                     :key="permissao.valor"
                     class="text-center"
                   >
-                    <q-icon
-                      v-if="nivel.permissoes.includes(permissao.valor)"
-                      name="check_circle"
-                      color="positive"
-                      size="20px"
+                    <q-checkbox
+                      v-if="nivel.personalizavel"
+                      :model-value="(permissoesEditaveis[nivel.valor] || []).includes(permissao.valor)"
+                      @update:model-value="alternarPermissaoNivel(nivel.valor, permissao.valor)"
                     />
-                    <q-icon v-else name="remove" color="grey-5" size="18px" />
+
+                    <template v-else>
+                      <q-icon
+                        v-if="nivel.permissoes.includes(permissao.valor)"
+                        name="check_circle"
+                        color="positive"
+                        size="20px"
+                      />
+                      <q-icon v-else name="remove" color="grey-5" size="18px" />
+                    </template>
+                  </td>
+
+                  <td class="text-center">
+                    <q-btn
+                      v-if="nivel.personalizavel"
+                      flat
+                      dense
+                      size="sm"
+                      color="primary"
+                      icon="save"
+                      label="Salvar"
+                      :loading="salvandoPermissoesNivel === nivel.valor"
+                      @click="salvarPermissoesNivel(nivel.valor)"
+                    />
+                    <span v-else class="text-caption text-grey-6">fixo</span>
                   </td>
                 </tr>
               </tbody>
@@ -88,9 +114,96 @@
               <template #avatar>
                 <q-icon name="info" color="primary" />
               </template>
-              Só o nível <strong>Mestre</strong> está definido. Os demais entram
-              aqui assim que você disser quais são e o que cada um pode fazer.
+              O <strong>Analista</strong> (e o Supervisor) só ganham as
+              operações de Alocar/Editar/Remover marcadas aqui de fato dentro
+              do escopo definido nos vínculos de cada usuário (Setor, Equipe,
+              Base), no formulário abaixo.
             </q-banner>
+          </q-card-section>
+        </q-card>
+
+        <!-- ================================================== -->
+        <!-- ATUALIZAÇÃO DO CADASTRO DE COLABORADORES -->
+        <!-- ================================================== -->
+
+        <q-card v-if="temPermissao(PODE_GERENCIAR_COLABORADORES)" bordered class="q-mb-md">
+          <q-card-section>
+            <div class="text-h6">Atualizar cadastro de colaboradores</div>
+            <div class="text-caption text-grey-7">
+              Exclusivo do Administrador. Envie a planilha Excel padrão do
+              cadastro de colaboradores para criar ou atualizar os registros.
+            </div>
+          </q-card-section>
+
+          <q-separator />
+
+          <q-card-section>
+            <div class="row q-col-gutter-md items-start">
+              <div class="col-12 col-md">
+                <q-file
+                  v-model="arquivoColaboradores"
+                  outlined
+                  dense
+                  clearable
+                  accept=".xlsx"
+                  label="Planilha de colaboradores (.xlsx)"
+                  @update:model-value="resumoColaboradores = null"
+                >
+                  <template #prepend>
+                    <q-icon name="attach_file" />
+                  </template>
+                </q-file>
+              </div>
+
+              <div class="col-12 col-md-auto">
+                <q-btn
+                  color="primary"
+                  icon="fact_check"
+                  label="Analisar planilha"
+                  :disable="!arquivoColaboradores"
+                  :loading="analisandoColaboradores"
+                  @click="analisarPlanilhaColaboradores"
+                />
+              </div>
+            </div>
+
+            <div v-if="resumoColaboradores" class="q-mt-md">
+              <div class="row q-gutter-sm q-mb-sm">
+                <q-chip color="positive" text-color="white">
+                  {{ resumoColaboradores.criados || 0 }} novo(s)
+                </q-chip>
+                <q-chip color="primary" text-color="white">
+                  {{ resumoColaboradores.atualizados || 0 }} atualizado(s)
+                </q-chip>
+                <q-chip color="grey-7" text-color="white">
+                  {{ resumoColaboradores.rateios_novos || 0 }} rateio(s) novo(s)
+                </q-chip>
+                <q-chip
+                  :color="resumoColaboradores.erros?.length ? 'negative' : 'grey-5'"
+                  text-color="white"
+                >
+                  {{ resumoColaboradores.erros?.length || 0 }} com erro
+                </q-chip>
+              </div>
+
+              <q-banner
+                v-if="resumoColaboradores.erros?.length"
+                class="bg-red-1 text-negative q-mb-sm"
+                rounded
+              >
+                <div v-for="(item, indice) in resumoColaboradores.erros" :key="indice">
+                  Linha {{ item.linha }}: {{ item.erro }}
+                </div>
+              </q-banner>
+
+              <q-btn
+                color="positive"
+                label="Confirmar e aplicar"
+                :disable="!!resumoColaboradores.erros?.length"
+                :loading="aplicandoColaboradores"
+                @click="aplicarPlanilhaColaboradores"
+              />
+            </div>
           </q-card-section>
         </q-card>
 
@@ -289,20 +402,34 @@
                 </div>
 
                 <div v-if="!nivelIgnoraVinculos" class="q-gutter-md">
-                  <q-select
-                    v-for="(rotulo, tipo) in tiposVinculo"
-                    :key="tipo"
-                    v-model="formulario.vinculos[tipo]"
-                    outlined
-                    dense
-                    multiple
-                    use-chips
-                    use-input
-                    new-value-mode="add-unique"
-                    input-debounce="0"
-                    :label="rotulo"
-                    :options="opcoesVinculo[tipo] || []"
-                  />
+                  <template v-for="(rotulo, tipo) in tiposVinculo" :key="tipo">
+                    <q-select
+                      v-if="tipo === 'EQUIPE'"
+                      v-model="formulario.vinculos[tipo]"
+                      outlined
+                      dense
+                      multiple
+                      use-chips
+                      emit-value
+                      map-options
+                      :label="rotulo"
+                      :options="opcoesEquipeVinculo"
+                    />
+
+                    <q-select
+                      v-else
+                      v-model="formulario.vinculos[tipo]"
+                      outlined
+                      dense
+                      multiple
+                      use-chips
+                      use-input
+                      new-value-mode="add-unique"
+                      input-debounce="0"
+                      :label="rotulo"
+                      :options="opcoesVinculo[tipo] || []"
+                    />
+                  </template>
                 </div>
               </div>
             </q-card-section>
@@ -331,21 +458,92 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 
 import CabecalhoApp from '../components/CabecalhoApp.vue'
 import MarcaDaguaFundo from '../components/MarcaDaguaFundo.vue'
-import { PODE_GERENCIAR_USUARIOS, useSessao } from '../composables/useSessao'
+import {
+  PODE_GERENCIAR_COLABORADORES,
+  PODE_GERENCIAR_USUARIOS,
+  useSessao
+} from '../composables/useSessao'
 
 definePage({ meta: { permissao: PODE_GERENCIAR_USUARIOS } })
 
-const { usuario, niveis, tiposVinculo, buscarSessao } = useSessao()
+const {
+  usuario,
+  niveis,
+  tiposVinculo,
+  buscarSessao,
+  temPermissao
+} = useSessao()
+
+const arquivoColaboradores = ref(null)
+const resumoColaboradores = ref(null)
+const analisandoColaboradores = ref(false)
+const aplicandoColaboradores = ref(false)
+
+// cópia local editável das permissões por nível, sincronizada sempre que
+// 'niveis' (vindo da sessão) muda — assim dá pra marcar/desmarcar antes de
+// salvar sem alterar o estado compartilhado da sessão
+const permissoesEditaveis = reactive({})
+
+watch(
+  niveis,
+  lista => {
+    for (const nivel of lista) {
+      permissoesEditaveis[nivel.valor] = [...nivel.permissoes]
+    }
+  },
+  { immediate: true, deep: true }
+)
+
+const salvandoPermissoesNivel = ref('')
+
+function alternarPermissaoNivel(nivelValor, permissaoValor) {
+  const atuais = new Set(permissoesEditaveis[nivelValor] || [])
+  if (atuais.has(permissaoValor)) {
+    atuais.delete(permissaoValor)
+  } else {
+    atuais.add(permissaoValor)
+  }
+  permissoesEditaveis[nivelValor] = [...atuais]
+}
+
+async function salvarPermissoesNivel(nivelValor) {
+  limparAvisos()
+  salvandoPermissoesNivel.value = nivelValor
+
+  try {
+    const resposta = await fetch(`/api/niveis/${nivelValor}/permissoes`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ permissoes: permissoesEditaveis[nivelValor] || [] })
+    })
+
+    const dados = await resposta.json()
+
+    if (!resposta.ok || dados.erro) {
+      throw new Error(dados.erro || 'Não foi possível salvar as permissões.')
+    }
+
+    niveis.value = dados.niveis
+    sucesso.value = `Permissões do nível ${rotuloDoNivel(nivelValor)} atualizadas.`
+  } catch (e) {
+    erro.value = e.message || 'Não foi possível salvar as permissões.'
+  } finally {
+    salvandoPermissoesNivel.value = ''
+  }
+}
 
 const SENHA_MINIMA = 6
 
-// mesmos nomes do auth.py
+// mesmos nomes do auth.py — cada uma é um "check" na tabela de níveis
 const PERMISSOES = [
   { valor: 'ver_resumo', rotulo: 'Ver resumo' },
   { valor: 'ver_equipes', rotulo: 'Ver equipes' },
   { valor: 'alocar', rotulo: 'Alocar' },
+  { valor: 'editar_alocacao', rotulo: 'Editar alocações' },
+  { valor: 'remover_alocacao', rotulo: 'Remover' },
   { valor: 'gerenciar_vagas', rotulo: 'Cadastrar vagas' },
-  { valor: 'gerenciar_usuarios', rotulo: 'Gerenciar usuários' }
+  { valor: 'gerenciar_usuarios', rotulo: 'Gerenciar usuários' },
+  { valor: 'gerenciar_colaboradores', rotulo: 'Atualizar cadastro' }
 ]
 
 const usuarios = ref([])
@@ -418,6 +616,15 @@ const opcoesVinculo = computed(() => {
     ])
   )
 })
+
+const opcoesEquipeVinculo = computed(() =>
+  [...equipes.value]
+    .map(equipe => ({
+      label: `${equipe.prefixo || 'Equipe'} — ${equipe.base || ''}`,
+      value: String(equipe.id)
+    }))
+    .sort((a, b) => a.label.localeCompare(b.label, 'pt-BR'))
+)
 
 function rotuloDoNivel(valor) {
   return niveis.value.find(nivel => nivel.valor === valor)?.rotulo || valor
@@ -538,6 +745,73 @@ async function salvar() {
     erroFormulario.value = e.message || 'Não foi possível salvar o usuário.'
   } finally {
     salvando.value = false
+  }
+}
+
+async function analisarPlanilhaColaboradores() {
+  if (!arquivoColaboradores.value) {
+    return
+  }
+
+  limparAvisos()
+  analisandoColaboradores.value = true
+
+  try {
+    const corpo = new FormData()
+    corpo.append('arquivo', arquivoColaboradores.value)
+
+    const resposta = await fetch('/api/colaboradores/planilha/previa', {
+      method: 'POST',
+      body: corpo
+    })
+
+    const dados = await resposta.json()
+
+    if (!resposta.ok && !dados.criados && !dados.atualizados) {
+      throw new Error(dados.erro || 'Erro ao analisar a planilha.')
+    }
+
+    resumoColaboradores.value = dados
+  } catch (e) {
+    erro.value = e.message || 'Erro ao analisar a planilha.'
+  } finally {
+    analisandoColaboradores.value = false
+  }
+}
+
+async function aplicarPlanilhaColaboradores() {
+  if (!arquivoColaboradores.value) {
+    return
+  }
+
+  limparAvisos()
+  aplicandoColaboradores.value = true
+
+  try {
+    const corpo = new FormData()
+    corpo.append('arquivo', arquivoColaboradores.value)
+
+    const resposta = await fetch('/api/colaboradores/planilha/aplicar', {
+      method: 'POST',
+      body: corpo
+    })
+
+    const dados = await resposta.json()
+
+    if (!resposta.ok || dados.erro) {
+      resumoColaboradores.value = dados.resumo || resumoColaboradores.value
+      throw new Error(dados.erro || 'Erro ao aplicar a planilha.')
+    }
+
+    sucesso.value =
+      `Cadastro atualizado: ${dados.criados} novo(s), ` +
+      `${dados.atualizados} atualizado(s), ${dados.rateios_novos} rateio(s) novo(s).`
+    arquivoColaboradores.value = null
+    resumoColaboradores.value = null
+  } catch (e) {
+    erro.value = e.message || 'Erro ao aplicar a planilha.'
+  } finally {
+    aplicandoColaboradores.value = false
   }
 }
 
