@@ -20,6 +20,10 @@ pip install -r requirements.txt
    - `002_add_unique_membro_chapa.sql` — impede o mesmo colaborador em duas vagas.
    - `003_add_setor_supervisor_coordenador.sql` — SETOR, SUPERVISOR e COORDENADOR por vaga.
    - `004_add_usuarios.sql` — usuarios do sistema e os vinculos de cada um.
+   - `005_add_origem_vaga.sql` — marca a vaga como PADRAO ou EXTRA (Folguista Extra).
+   - `006_renomear_mestre_para_administrador.sql` — renomeia o nivel MESTRE para ADMINISTRADOR.
+   - `007_add_niveis_permissoes.sql` — permissoes por nivel personalizaveis pelo Administrador.
+   - `008_add_hierarquia_usuarios.sql` — hierarquia Gerente -> Coordenador -> Supervisor.
 
    Cada arquivo traz no cabecalho o que conferir antes de rodar.
 

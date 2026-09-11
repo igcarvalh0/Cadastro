@@ -1956,9 +1956,31 @@ def criar_vaga():
 
     session = SessionLocal()
     try:
-        equipe = session.query(Equipe).filter(Equipe.id == equipe_id).first()
+        equipe = (
+            session.query(Equipe)
+            .options(joinedload(Equipe.composicoes))
+            .filter(Equipe.id == equipe_id)
+            .first()
+        )
         if not equipe:
             return jsonify({"erro": "Equipe não encontrada."}), 404
+
+        # setor/supervisor/coordenador sao por (equipe + disciplina), nunca
+        # por vaga: se a equipe ja tem vaga dessa disciplina, o responsavel
+        # dela vale, ignorando o que veio no formulario, para nao permitir
+        # a mesma disciplina com responsaveis diferentes.
+        tipo = TIPO_EQUIPE_PADRAO if normalizar(estrutura) == "FOLGUISTA" else estrutura.upper()
+        vaga_mesma_disciplina = next(
+            (
+                c for c in (equipe.composicoes or [])
+                if not eh_extra(c) and tipo_equipe_da_vaga(c) == tipo
+            ),
+            None,
+        )
+        if vaga_mesma_disciplina:
+            setor = vaga_mesma_disciplina.SETOR
+            supervisor = vaga_mesma_disciplina.SUPERVISOR
+            coordenador = vaga_mesma_disciplina.COORDENADOR
 
         vaga = ComposicaoEquipe(
             equipe_id=equipe_id,

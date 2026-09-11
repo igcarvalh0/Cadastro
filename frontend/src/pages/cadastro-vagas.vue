@@ -130,13 +130,22 @@
                   @filter="filtrarEstruturas"
                 />
 
-                <q-input v-model="vagaSetor" outlined dense label="Setor (opcional)" />
+                <q-input
+                  v-model="vagaSetor"
+                  outlined
+                  dense
+                  label="Setor (opcional)"
+                  :readonly="metadadoVagaTravado"
+                  :hint="metadadoVagaTravado ? 'Já definido para esta equipe/disciplina' : ''"
+                />
 
                 <q-input
                   v-model="vagaSupervisor"
                   outlined
                   dense
                   label="Supervisor (opcional)"
+                  :readonly="metadadoVagaTravado"
+                  :hint="metadadoVagaTravado ? 'Já definido para esta equipe/disciplina' : ''"
                 />
 
                 <q-input
@@ -144,6 +153,8 @@
                   outlined
                   dense
                   label="Coordenador (opcional)"
+                  :readonly="metadadoVagaTravado"
+                  :hint="metadadoVagaTravado ? 'Já definido para esta equipe/disciplina' : ''"
                 />
 
                 <q-btn
@@ -1112,6 +1123,23 @@ const podeCriarVaga = computed(() =>
   Boolean(vagaEquipe.value && vagaFuncao.value && vagaEstrutura.value)
 )
 
+// setor/supervisor/coordenador sao por (equipe + disciplina), nunca por
+// vaga: se a equipe ja tem alguma vaga dessa disciplina, o responsavel
+// vem de la e os campos ficam travados, pra nao dar pra cadastrar a
+// mesma disciplina com responsaveis diferentes.
+const vagaExistenteDoTipo = computed(() => {
+  const equipe = equipes.value.find(item => item.id === vagaEquipe.value)
+  const tipoAlvo = (vagaEstrutura.value || '').trim().toUpperCase()
+  if (!equipe || !tipoAlvo) {
+    return null
+  }
+  return (equipe.vagas || []).find(
+    vaga => (vaga.tipo || '').toUpperCase() === tipoAlvo
+  ) || null
+})
+
+const metadadoVagaTravado = computed(() => Boolean(vagaExistenteDoTipo.value))
+
 // ============================================================
 // FILTROS DOS SELECTS
 // ============================================================
@@ -1761,6 +1789,16 @@ watch(vagaEquipe, id => {
     (equipe.prefixo || '').trim().toUpperCase() === 'FOLGUISTA'
       ? 'Folguista'
       : 'Construção'
+})
+
+watch(vagaExistenteDoTipo, vaga => {
+  if (!vaga) {
+    return
+  }
+
+  vagaSetor.value = vaga.setor || ''
+  vagaSupervisor.value = vaga.supervisor || ''
+  vagaCoordenador.value = vaga.coordenador || ''
 })
 
 onMounted(() => {
