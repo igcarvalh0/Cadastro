@@ -767,6 +767,67 @@
     </q-dialog>
 
     <!-- ================================================== -->
+    <!-- CONFIRMAR TRANSFERÊNCIA (colaborador já alocado) -->
+    <!-- ================================================== -->
+
+    <q-dialog v-model="confirmacaoTransferencia.aberto" persistent>
+      <q-card style="min-width: 420px; max-width: 90vw">
+        <q-card-section class="row items-center">
+          <q-icon name="warning" color="warning" size="28px" class="q-mr-sm" />
+          <div class="text-h6">Colaborador já alocado</div>
+        </q-card-section>
+
+        <q-separator />
+
+        <q-card-section>
+          <p class="q-mb-md">{{ confirmacaoTransferencia.mensagem }}</p>
+
+          <q-list bordered dense class="rounded-borders">
+            <q-item>
+              <q-item-section>
+                <q-item-label caption>Equipe atual</q-item-label>
+                <q-item-label>
+                  {{ confirmacaoTransferencia.equipe || '?' }}
+                  <span v-if="confirmacaoTransferencia.base">
+                    ({{ confirmacaoTransferencia.base }})
+                  </span>
+                </q-item-label>
+              </q-item-section>
+            </q-item>
+
+            <q-item v-if="confirmacaoTransferencia.tipoEquipe">
+              <q-item-section>
+                <q-item-label caption>Tipo de equipe</q-item-label>
+                <q-item-label>{{ confirmacaoTransferencia.tipoEquipe }}</q-item-label>
+              </q-item-section>
+            </q-item>
+
+            <q-item v-if="confirmacaoTransferencia.funcaoEr">
+              <q-item-section>
+                <q-item-label caption>Vaga</q-item-label>
+                <q-item-label>{{ confirmacaoTransferencia.funcaoEr }}</q-item-label>
+              </q-item-section>
+            </q-item>
+          </q-list>
+
+          <p class="q-mt-md q-mb-none">
+            Deseja transferir o colaborador mesmo assim?
+          </p>
+        </q-card-section>
+
+        <q-card-actions align="right">
+          <q-btn flat label="Cancelar" @click="cancelarTransferenciaPendente" />
+
+          <q-btn
+            color="primary"
+            label="Confirmar transferência"
+            @click="confirmarTransferenciaPendente"
+          />
+        </q-card-actions>
+      </q-card>
+    </q-dialog>
+
+    <!-- ================================================== -->
     <!-- ALOCAÇÃO EM MASSA POR PLANILHA -->
     <!-- ================================================== -->
 
@@ -951,6 +1012,46 @@ const opcoesColaboradoresAlocacao = ref([])
 // trocar) — sem isso a pessoa apareceria como opção pra "substituir a si
 // mesma".
 const chapaExcluidaAlocacao = ref('')
+
+// Diálogo (dentro do próprio site, sem window.confirm — nativo do
+// navegador pode ser bloqueado/ignorado silenciosamente, e não segue o
+// visual do projeto) usado pelos 3 fluxos que podem mover alguém de uma
+// equipe pra outra: Alocar, Trocar colaborador e Folguista Extra.
+const confirmacaoTransferencia = ref({
+  aberto: false,
+  mensagem: '',
+  equipe: '',
+  base: '',
+  tipoEquipe: '',
+  funcaoEr: '',
+  aoConfirmar: null
+})
+
+function abrirConfirmacaoTransferencia({ mensagem, alocacaoAtual, aoConfirmar }) {
+  const atual = alocacaoAtual || {}
+  confirmacaoTransferencia.value = {
+    aberto: true,
+    mensagem: mensagem || 'Este colaborador já está alocado em outra equipe.',
+    equipe: atual.equipe || '',
+    base: atual.base || '',
+    tipoEquipe: atual.tipo_equipe || '',
+    funcaoEr: atual.funcao_er || '',
+    aoConfirmar
+  }
+}
+
+function confirmarTransferenciaPendente() {
+  const acao = confirmacaoTransferencia.value.aoConfirmar
+  confirmacaoTransferencia.value.aberto = false
+  if (acao) {
+    acao()
+  }
+}
+
+function cancelarTransferenciaPendente() {
+  confirmacaoTransferencia.value.aberto = false
+  confirmacaoTransferencia.value.aoConfirmar = null
+}
 
 const opcoesAlocacao = ref({})
 const colaboradorSelecionado = ref(null)
@@ -1436,20 +1537,11 @@ async function salvarEdicaoAlocacao(confirmarTransferencia = false) {
     const dados = await resposta.json()
 
     if (resposta.status === 409 && dados.conflito) {
-      const atual = dados.alocacao_atual || {}
-      const descricaoAtual = atual.equipe
-        ? `na equipe ${atual.equipe} (${atual.base || ''})` +
-          (atual.tipo_equipe ? ` — tipo de equipe: ${atual.tipo_equipe}` : '')
-        : 'em outra equipe'
-
-      if (
-        window.confirm(
-          `${dados.mensagem}\nEstá ${descricaoAtual}.\n\n` +
-            'Deseja transferir o colaborador para esta vaga mesmo assim?'
-        )
-      ) {
-        return await salvarEdicaoAlocacao(true)
-      }
+      abrirConfirmacaoTransferencia({
+        mensagem: dados.mensagem,
+        alocacaoAtual: dados.alocacao_atual,
+        aoConfirmar: () => salvarEdicaoAlocacao(true)
+      })
       return
     }
 
@@ -1508,20 +1600,11 @@ async function salvarFolguistaExtra(confirmarTransferencia = false) {
     const dados = await resposta.json()
 
     if (resposta.status === 409 && dados.conflito) {
-      const atual = dados.alocacao_atual || {}
-      const descricaoAtual = atual.equipe
-        ? `na equipe ${atual.equipe} (${atual.base || ''})` +
-          (atual.tipo_equipe ? ` — tipo de equipe: ${atual.tipo_equipe}` : '')
-        : 'em outra equipe'
-
-      if (
-        window.confirm(
-          `${dados.mensagem}\nEstá ${descricaoAtual}.\n\n` +
-            'Deseja transferir o colaborador para o Folguista Extra desta equipe?'
-        )
-      ) {
-        return await salvarFolguistaExtra(true)
-      }
+      abrirConfirmacaoTransferencia({
+        mensagem: dados.mensagem,
+        alocacaoAtual: dados.alocacao_atual,
+        aoConfirmar: () => salvarFolguistaExtra(true)
+      })
       return
     }
 
@@ -1729,21 +1812,11 @@ async function alocarColaborador(confirmarTransferencia = false) {
     const dados = await resposta.json()
 
     if (resposta.status === 409 && dados.conflito) {
-      const atual = dados.alocacao_atual || {}
-      const descricaoAtual = atual.equipe
-        ? `na equipe ${atual.equipe} (${atual.base || ''}), vaga ${atual.funcao_er || ''}` +
-          (atual.tipo_equipe ? ` — tipo de equipe: ${atual.tipo_equipe}` : '')
-        : 'em outra equipe'
-
-      if (
-        window.confirm(
-          `${dados.mensagem || 'Este colaborador já está alocado em outra equipe.'}\n` +
-            `Está ${descricaoAtual}.\n\n` +
-            'Deseja transferir o colaborador para esta nova vaga?'
-        )
-      ) {
-        return await alocarColaborador(true)
-      }
+      abrirConfirmacaoTransferencia({
+        mensagem: dados.mensagem || 'Este colaborador já está alocado em outra equipe.',
+        alocacaoAtual: dados.alocacao_atual,
+        aoConfirmar: () => alocarColaborador(true)
+      })
       return
     }
 
