@@ -502,7 +502,7 @@
         <q-card-section>
           <q-select
             v-model="colaboradorSelecionado"
-            :options="colaboradoresLivresAlocacao"
+            :options="opcoesColaboradoresAlocacao"
             label="Colaborador"
             outlined
             dense
@@ -522,6 +522,22 @@
                     CHAPA: {{ scope.opt.chapa }} |
                     {{ scope.opt.funcao || 'Função não informada' }}
                   </q-item-label>
+                </q-item-section>
+
+                <q-item-section side>
+                  <q-chip
+                    v-if="scope.opt.alocado"
+                    color="amber-8"
+                    text-color="white"
+                    size="sm"
+                    dense
+                  >
+                    {{ descricaoAlocacaoAtual(scope.opt.chapa) }}
+                  </q-chip>
+
+                  <q-chip v-else color="positive" text-color="white" size="sm" dense>
+                    Livre
+                  </q-chip>
                 </q-item-section>
               </q-item>
             </template>
@@ -602,7 +618,7 @@
         <q-card-section>
           <q-select
             v-model="colaboradorNovoEdicao"
-            :options="colaboradoresLivresAlocacao"
+            :options="opcoesColaboradoresAlocacao"
             label="Novo colaborador"
             outlined
             dense
@@ -621,6 +637,22 @@
                     CHAPA: {{ scope.opt.chapa }} |
                     {{ scope.opt.funcao || 'Função não informada' }}
                   </q-item-label>
+                </q-item-section>
+
+                <q-item-section side>
+                  <q-chip
+                    v-if="scope.opt.alocado"
+                    color="amber-8"
+                    text-color="white"
+                    size="sm"
+                    dense
+                  >
+                    {{ descricaoAlocacaoAtual(scope.opt.chapa) }}
+                  </q-chip>
+
+                  <q-chip v-else color="positive" text-color="white" size="sm" dense>
+                    Livre
+                  </q-chip>
                 </q-item-section>
               </q-item>
             </template>
@@ -661,7 +693,7 @@
         <q-card-section>
           <q-select
             v-model="colaboradorExtra"
-            :options="colaboradoresLivresAlocacao"
+            :options="opcoesColaboradoresAlocacao"
             label="Colaborador"
             outlined
             dense
@@ -681,6 +713,22 @@
                     CHAPA: {{ scope.opt.chapa }} |
                     {{ scope.opt.funcao || 'Função não informada' }}
                   </q-item-label>
+                </q-item-section>
+
+                <q-item-section side>
+                  <q-chip
+                    v-if="scope.opt.alocado"
+                    color="amber-8"
+                    text-color="white"
+                    size="sm"
+                    dense
+                  >
+                    {{ descricaoAlocacaoAtual(scope.opt.chapa) }}
+                  </q-chip>
+
+                  <q-chip v-else color="positive" text-color="white" size="sm" dense>
+                    Livre
+                  </q-chip>
                 </q-item-section>
               </q-item>
             </template>
@@ -886,7 +934,19 @@ const limpandoAlocacoes = ref(false)
 
 const filtroColaborador = ref('')
 const statusColaborador = ref('TODOS')
-const colaboradoresLivresAlocacao = ref([])
+
+// Opções do combo de busca nos diálogos de Alocar/Trocar/Folguista Extra.
+// Inclui colaboradores JÁ ALOCADOS de propósito (com o "Alocado em ..."
+// aparecendo no item) — o backend já sabe mover alguém de uma vaga para
+// outra com confirmação (ver o fluxo de "conflito" em cada função de
+// salvar), então esconder quem já está alocado só forçava o usuário a
+// remover a pessoa da equipe atual antes, num passo a mais. Livres
+// aparecem primeiro na lista.
+const opcoesColaboradoresAlocacao = ref([])
+// CHAPA a excluir das opções (o próprio ocupante da vaga, no diálogo de
+// trocar) — sem isso a pessoa apareceria como opção pra "substituir a si
+// mesma".
+const chapaExcluidaAlocacao = ref('')
 
 const opcoesAlocacao = ref({})
 const colaboradorSelecionado = ref(null)
@@ -1188,6 +1248,34 @@ const colaboradoresLivres = computed(() => {
     .length
 })
 
+// CHAPA -> onde a pessoa esta alocada hoje (prefixo + base da equipe) — usa
+// pra rotular "Alocado em ..." nas opções de colaborador dos diálogos de
+// Alocar/Trocar/Folguista Extra.
+const mapaEquipeAtualPorChapa = computed(() => {
+  const mapa = new Map()
+
+  for (const equipe of equipes.value) {
+    for (const vaga of equipe.vagas || []) {
+      if (vaga.colaborador?.chapa) {
+        mapa.set(String(vaga.colaborador.chapa), {
+          prefixo: equipe.prefixo,
+          base: equipe.base
+        })
+      }
+    }
+  }
+
+  return mapa
+})
+
+function descricaoAlocacaoAtual(chapa) {
+  const atual = mapaEquipeAtualPorChapa.value.get(String(chapa))
+  if (!atual) {
+    return 'Alocado em outra equipe'
+  }
+  return `Alocado em ${atual.prefixo} (${atual.base})`
+}
+
 // ============================================================
 // CARREGAR DADOS
 // ============================================================
@@ -1250,15 +1338,38 @@ async function carregarDados() {
   }
 }
 
+// Lista as opções do combo de colaborador dos 3 diálogos (Alocar, Trocar,
+// Folguista Extra): livres primeiro, depois os já alocados (identificados
+// no item pelo "Alocado em ..." — ver mapaEquipeAtualPorChapa), e sem a
+// CHAPA marcada em chapaExcluidaAlocacao (o proprio ocupante da vaga, so
+// no diálogo de trocar).
+function opcoesColaboradoresParaFiltro(filtro = '') {
+  const termo = String(filtro || '').trim().toLowerCase()
+  const excluir = String(chapaExcluidaAlocacao.value || '')
+
+  return colaboradores.value
+    .filter(colaborador => {
+      if (excluir && String(colaborador.chapa) === excluir) {
+        return false
+      }
+      return (
+        !termo ||
+        String(colaborador.nome || '').toLowerCase().includes(termo) ||
+        String(colaborador.chapa || '').toLowerCase().includes(termo)
+      )
+    })
+    .slice()
+    .sort((a, b) => Number(a.alocado) - Number(b.alocado))
+}
+
 function selecionarColaborador(colaborador) {
   if (colaborador.alocado) {
     return
   }
 
   colaboradorSelecionado.value = colaborador
-  colaboradoresLivresAlocacao.value = colaboradores.value.filter(
-    item => !item.alocado
-  )
+  chapaExcluidaAlocacao.value = ''
+  opcoesColaboradoresAlocacao.value = opcoesColaboradoresParaFiltro()
 
   dialogAlocacao.value = true
 }
@@ -1268,32 +1379,14 @@ function abrirAlocacaoParaVaga(equipe, vaga) {
   baseAlocacao.value = equipe.base
   equipeAlocacao.value = equipe.id
   vagaAlocacao.value = vaga.id
-  colaboradoresLivresAlocacao.value = colaboradores.value.filter(
-    colaborador => !colaborador.alocado
-  )
+  chapaExcluidaAlocacao.value = ''
+  opcoesColaboradoresAlocacao.value = opcoesColaboradoresParaFiltro()
   dialogAlocacao.value = true
 }
 
 function filtrarColaboradoresAlocacao(valor, atualizar) {
   atualizar(() => {
-    const filtro = String(valor || '')
-      .trim()
-      .toLowerCase()
-
-    colaboradoresLivresAlocacao.value = colaboradores.value.filter(
-      colaborador => {
-        return (
-          !colaborador.alocado &&
-          (!filtro ||
-            String(colaborador.nome || '')
-              .toLowerCase()
-              .includes(filtro) ||
-            String(colaborador.chapa || '')
-              .toLowerCase()
-              .includes(filtro))
-        )
-      }
-    )
+    opcoesColaboradoresAlocacao.value = opcoesColaboradoresParaFiltro(valor)
   })
 }
 
@@ -1313,9 +1406,8 @@ function limparVagaAlocacao() {
 function abrirEdicaoAlocacao(vaga) {
   vagaEmEdicao.value = vaga
   colaboradorNovoEdicao.value = null
-  colaboradoresLivresAlocacao.value = colaboradores.value.filter(
-    item => !item.alocado
-  )
+  chapaExcluidaAlocacao.value = vaga.colaborador?.chapa || ''
+  opcoesColaboradoresAlocacao.value = opcoesColaboradoresParaFiltro()
   dialogEdicaoAlocacao.value = true
 }
 
@@ -1381,9 +1473,8 @@ function abrirFolguistaExtra(equipe) {
   colaboradorExtra.value = null
   funcaoExtra.value = ''
   setorExtra.value = null
-  colaboradoresLivresAlocacao.value = colaboradores.value.filter(
-    item => !item.alocado
-  )
+  chapaExcluidaAlocacao.value = ''
+  opcoesColaboradoresAlocacao.value = opcoesColaboradoresParaFiltro()
   dialogFolguistaExtra.value = true
 }
 
