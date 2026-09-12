@@ -358,12 +358,29 @@ const ladrilhos = [
 // Rede tipo "plexus": pontos flutuando bem devagar, ligados por linhas finas
 // quando ficam proximos — como uma malha de conexoes formando triangulos,
 // no estilo de fundo de "rede/tecnologia". Nas cores da marca.
-const REDE_NUM_PONTOS = 100
-const REDE_DISTANCIA_LINHA = 275
+//
+// Tanto a distancia de conexao quanto a quantidade de pontos acesos respiram
+// dentro de um intervalo [MIN, MAX] em vez de ficarem num valor fixo — uma
+// unica onda lenta (INTENSIDADE_REDE, 0..1) comanda as duas coisas, entao a
+// rede fica ora mais densa/conectada, ora mais rarefeita, sem nunca sumir de
+// vez nem virar uma teia fixa.
+const REDE_NUM_PONTOS_MAX = 360 // tamanho do array — nunca muda em runtime
+const REDE_NUM_PONTOS_MIN = 160 // quantos ficam acesos no ponto mais "vazio" da onda
+const REDE_DISTANCIA_LINHA_MIN = 90
+const REDE_DISTANCIA_LINHA_MAX = 150
 const REDE_COR_LINHA = '213, 77, 110'
 const REDE_COR_PONTO = '229, 124, 148'
 const REDE_COR_DESTAQUE = '255, 214, 224'
 
+// Um ciclo completo da onda leva ~70s a 60fps (2*PI / incremento / 60). Lento
+// o bastante pra nao parecer "piscando", so uma respiracao de fundo.
+const REDE_CICLO_INCREMENTO = 0.0015
+// Largura (em fracao de pontos) da faixa onde um ponto aparece/some com
+// fade, em vez de piscar do nada — sem isso a borda da onda ficaria com
+// pontos "estourando" na tela.
+const REDE_FAIXA_TRANSICAO = 0.05
+
+let faseCicloRede = 0
 let pontosRede = []
 
 function criarPontoRede(largura, altura, destaque) {
@@ -377,12 +394,17 @@ function criarPontoRede(largura, altura, destaque) {
     vy: Math.sin(angulo) * velocidade,
     raio: destaque ? 2.6 + Math.random() * 1 : 1.3 + Math.random() * 1,
     pulso: Math.random() * Math.PI * 2,
+    // posicao fixa deste ponto na "fila" de quem acende primeiro — sorteada
+    // uma vez, na criacao, e nunca mais muda (por isso os mesmos pontos
+    // entram e saem, em vez de trocar de identidade a cada quadro)
+    ordem: Math.random(),
+    visibilidade: 1,
     destaque
   }
 }
 
 function prepararRede(largura, altura) {
-  pontosRede = Array.from({ length: REDE_NUM_PONTOS }, (_, i) =>
+  pontosRede = Array.from({ length: REDE_NUM_PONTOS_MAX }, (_, i) =>
     criarPontoRede(largura, altura, i % 7 === 0)
   )
 }
@@ -428,7 +450,17 @@ function desenharLosango(ctx, centroX, centroY, escala, opacidade, rotacao) {
 function desenharRede(ctx, largura, altura) {
   if (!largura || !altura) return
 
-  // move e faz quicar nas bordas, bem devagar
+  faseCicloRede += REDE_CICLO_INCREMENTO * fatorMovimentoFundo
+  const intensidadeRede = (Math.sin(faseCicloRede) + 1) / 2 // 0..1
+  const distanciaLinhaAtual =
+    REDE_DISTANCIA_LINHA_MIN + (REDE_DISTANCIA_LINHA_MAX - REDE_DISTANCIA_LINHA_MIN) * intensidadeRede
+  const fracaoPontosAtiva =
+    (REDE_NUM_PONTOS_MIN + (REDE_NUM_PONTOS_MAX - REDE_NUM_PONTOS_MIN) * intensidadeRede) /
+    REDE_NUM_PONTOS_MAX
+
+  // move e faz quicar nas bordas, bem devagar; e recalcula a visibilidade
+  // de cada ponto contra a fatia atual da onda, com fade na borda pra nao
+  // "piscar do nada"
   for (const ponto of pontosRede) {
     ponto.x += ponto.vx * fatorMovimentoFundo
     ponto.y += ponto.vy * fatorMovimentoFundo
@@ -439,19 +471,26 @@ function desenharRede(ctx, largura, altura) {
 
     ponto.x = Math.min(Math.max(ponto.x, 0), largura)
     ponto.y = Math.min(Math.max(ponto.y, 0), altura)
+
+    const distanciaDaBorda = fracaoPontosAtiva - ponto.ordem
+    ponto.visibilidade = Math.min(1, Math.max(0, distanciaDaBorda / REDE_FAIXA_TRANSICAO + 0.5))
   }
 
   // liga os pontos proximos com linhas finas — quanto mais perto, mais viva
   for (let i = 0; i < pontosRede.length; i++) {
+    const a = pontosRede[i]
+    if (a.visibilidade <= 0) continue
+
     for (let j = i + 1; j < pontosRede.length; j++) {
-      const a = pontosRede[i]
       const b = pontosRede[j]
+      if (b.visibilidade <= 0) continue
+
       const dx = a.x - b.x
       const dy = a.y - b.y
       const distancia = Math.sqrt(dx * dx + dy * dy)
 
-      if (distancia < REDE_DISTANCIA_LINHA) {
-        const alpha = (1 - distancia / REDE_DISTANCIA_LINHA) * 0.45
+      if (distancia < distanciaLinhaAtual) {
+        const alpha = (1 - distancia / distanciaLinhaAtual) * 0.45 * a.visibilidade * b.visibilidade
         ctx.strokeStyle = `rgba(${REDE_COR_LINHA}, ${alpha.toFixed(3)})`
         ctx.lineWidth = 1
         ctx.beginPath()
@@ -464,6 +503,8 @@ function desenharRede(ctx, largura, altura) {
 
   // pontos por cima das linhas, com um leve brilho
   for (const ponto of pontosRede) {
+    if (ponto.visibilidade <= 0) continue
+
     const cor = ponto.destaque ? REDE_COR_DESTAQUE : REDE_COR_PONTO
     const opacidade = ponto.destaque
       ? 0.7 + Math.sin(ponto.pulso) * 0.25
@@ -472,7 +513,7 @@ function desenharRede(ctx, largura, altura) {
     ctx.save()
     ctx.shadowColor = `rgba(${cor}, 0.9)`
     ctx.shadowBlur = ponto.destaque ? 8 : 3
-    ctx.fillStyle = `rgba(${cor}, ${Math.max(0.15, opacidade).toFixed(3)})`
+    ctx.fillStyle = `rgba(${cor}, ${(Math.max(0.15, opacidade) * ponto.visibilidade).toFixed(3)})`
     ctx.beginPath()
     ctx.arc(ponto.x, ponto.y, ponto.raio, 0, Math.PI * 2)
     ctx.fill()
@@ -560,7 +601,7 @@ onMounted(async () => {
   await nextTick()
 
   if (canvasFundoEl.value) {
-    fatorMovimentoFundo = preferoMenosAnimacaoFundo() ? 0.5 : 1
+    fatorMovimentoFundo = preferoMenosAnimacaoFundo() ? 1 : 1
     contextoFundo = canvasFundoEl.value.getContext('2d')
     redimensionarCanvas()
     window.addEventListener('resize', redimensionarCanvas)
