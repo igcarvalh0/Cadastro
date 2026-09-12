@@ -560,7 +560,7 @@ onMounted(async () => {
   await nextTick()
 
   if (canvasFundoEl.value) {
-    fatorMovimentoFundo = preferoMenosAnimacaoFundo() ? 0.15 : 1
+    fatorMovimentoFundo = preferoMenosAnimacaoFundo() ? 0.5 : 1
     contextoFundo = canvasFundoEl.value.getContext('2d')
     redimensionarCanvas()
     window.addEventListener('resize', redimensionarCanvas)
