@@ -335,7 +335,7 @@ let animandoFundo = false
 // Velocidade unica do fundo animado — nao depende mais de
 // prefers-reduced-motion (o Igor testou as duas e preferiu ficar so com
 // uma velocidade fixa, em vez de mudar conforme a preferencia do SO).
-const FATOR_MOVIMENTO_FUNDO = 2
+const FATOR_MOVIMENTO_FUNDO = 3
 
 const ladrilhos = [
   { x: -1, y: -1, cor: '#8E1834' },
@@ -359,7 +359,7 @@ const ladrilhos = [
 // movimento continua fixa (nao faz parte do sorteio).
 const REDE_NUM_PONTOS_MIN = 220
 const REDE_NUM_PONTOS_MAX = 360
-const REDE_DISTANCIA_LINHA_MIN = 120
+const REDE_DISTANCIA_LINHA_MIN = 140
 const REDE_DISTANCIA_LINHA_MAX = 200
 const REDE_COR_LINHA = '213, 77, 110'
 const REDE_COR_PONTO = '229, 124, 148'

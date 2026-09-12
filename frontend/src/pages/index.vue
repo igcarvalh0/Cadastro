@@ -460,7 +460,7 @@
                     <q-btn
                       color="positive"
                       icon="download"
-                      label="Exportar base total"
+                      label="Exportar Base"
                       dense
                       :disable="!composicaoConsolidada.length"
                       @click="abrirDetalhes('')"
