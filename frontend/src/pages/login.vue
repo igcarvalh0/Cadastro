@@ -332,17 +332,10 @@ let quadroAnimacao = null
 let tempoFundo = 0
 let animandoFundo = false
 
-function preferoMenosAnimacaoFundo() {
-  return window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
-}
-
-// Quem pede "menos movimento" no SO/navegador nao quer necessariamente o
-// fundo travado (isso costuma vir ligado por bateria/performance, nao so
-// por sensibilidade a movimento) — a recomendacao de acessibilidade e
-// reduzir o movimento, nao elimina-lo. Guardado uma vez no mount: mudar a
-// preferencia com a pagina aberta e caso raro demais pra valer recalcular
-// a cada quadro.
-let fatorMovimentoFundo = 1
+// Velocidade unica do fundo animado — nao depende mais de
+// prefers-reduced-motion (o Igor testou as duas e preferiu ficar so com
+// uma velocidade fixa, em vez de mudar conforme a preferencia do SO).
+const FATOR_MOVIMENTO_FUNDO = 2
 
 const ladrilhos = [
   { x: -1, y: -1, cor: '#8E1834' },
@@ -364,10 +357,10 @@ const ladrilhos = [
 // setup>` roda de novo a cada vez que o componente monta), entao a rede
 // vem mais densa numa visita e mais rarefeita noutra. A velocidade do
 // movimento continua fixa (nao faz parte do sorteio).
-const REDE_NUM_PONTOS_MIN = 160
+const REDE_NUM_PONTOS_MIN = 220
 const REDE_NUM_PONTOS_MAX = 360
-const REDE_DISTANCIA_LINHA_MIN = 90
-const REDE_DISTANCIA_LINHA_MAX = 150
+const REDE_DISTANCIA_LINHA_MIN = 120
+const REDE_DISTANCIA_LINHA_MAX = 200
 const REDE_COR_LINHA = '213, 77, 110'
 const REDE_COR_PONTO = '229, 124, 148'
 const REDE_COR_DESTAQUE = '255, 214, 224'
@@ -445,9 +438,9 @@ function desenharRede(ctx, largura, altura) {
 
   // move e faz quicar nas bordas, bem devagar
   for (const ponto of pontosRede) {
-    ponto.x += ponto.vx * fatorMovimentoFundo
-    ponto.y += ponto.vy * fatorMovimentoFundo
-    ponto.pulso += 0.02 * fatorMovimentoFundo
+    ponto.x += ponto.vx * FATOR_MOVIMENTO_FUNDO
+    ponto.y += ponto.vy * FATOR_MOVIMENTO_FUNDO
+    ponto.pulso += 0.02 * FATOR_MOVIMENTO_FUNDO
 
     if (ponto.x < 0 || ponto.x > largura) ponto.vx *= -1
     if (ponto.y < 0 || ponto.y > altura) ponto.vy *= -1
@@ -501,16 +494,16 @@ function animarFundo() {
   const canvas = canvasFundoEl.value
   if (!canvas || !contextoFundo) return
 
-  tempoFundo += 0.008 * fatorMovimentoFundo
+  tempoFundo += 0.008 * FATOR_MOVIMENTO_FUNDO
 
   contextoFundo.clearRect(0, 0, canvas.width, canvas.height)
   desenharRede(contextoFundo, canvas.width, canvas.height)
 
   particulas.forEach((particula, indice) => {
     const anguloAtual = -0.55 + Math.sin(tempoFundo + indice) * 0.15
-    particula.x += Math.cos(anguloAtual) * particula.velocidade * fatorMovimentoFundo
-    particula.y += Math.sin(anguloAtual) * particula.velocidade * fatorMovimentoFundo
-    particula.pulso += 0.02 * fatorMovimentoFundo
+    particula.x += Math.cos(anguloAtual) * particula.velocidade * FATOR_MOVIMENTO_FUNDO
+    particula.y += Math.sin(anguloAtual) * particula.velocidade * FATOR_MOVIMENTO_FUNDO
+    particula.pulso += 0.02 * FATOR_MOVIMENTO_FUNDO
 
     const opacidadeAtual = particula.opacidade + Math.sin(particula.pulso) * 0.04
 
@@ -575,7 +568,6 @@ onMounted(async () => {
   await nextTick()
 
   if (canvasFundoEl.value) {
-    fatorMovimentoFundo = preferoMenosAnimacaoFundo() ? 1 : 1
     contextoFundo = canvasFundoEl.value.getContext('2d')
     redimensionarCanvas()
     window.addEventListener('resize', redimensionarCanvas)
