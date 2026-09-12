@@ -457,7 +457,7 @@ def pode_realizar_operacao(
     que o usuario VE (equipe_visivel, nas telas de Resumo/Banco de
     Dados/Cadastro de Vagas), so nao trava mais a AÇÃO em si.
 
-    Motivo: um Supervisor vinculado a um tipo de equipe (ex.: MULTI) as
+    Motivo: um Supervisor vinculado a um tipo de equipe (ex.: LIGAÇÃO NOVA) as
     vezes precisa alocar um colaborador que ja esta numa vaga de outra
     disciplina (ex.: CONSTRUÇÃO), invisivel pra ele. A trava antiga barrava
     essa troca legitima com "Seu acesso não cobre a base ou o tipo de

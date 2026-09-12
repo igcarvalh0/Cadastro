@@ -2068,7 +2068,7 @@ COLUNAS_FIXAS_PLANILHA_ALOCACOES = (
     # analise, so a coluna CHAPA importa pra decidir alocar/trocar/remover).
     # Sao do CADASTRO do colaborador, nao da vaga: um colaborador de tipo de
     # ccusto CONSTRUÇÃO pode estar (e continua podendo ser alocado) numa
-    # vaga de TIPO EQUIPE MULTI — ver database/depara.py.
+    # vaga de TIPO EQUIPE LIGAÇÃO NOVA — ver database/depara.py.
     "SEÇÃO_TRATADA",
     "TIPO_CCUSTO",
 )

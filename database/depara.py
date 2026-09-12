@@ -21,7 +21,7 @@ nenhuma coluna ligando as duas abas):
 - RATEIO_FUNCIONARIO: código do rateio (Rateio.RATEIO_FUNCIONARIO, ex:
   "2.127.05") -> "tipo de ccusto" tratado (CONSTRUÇÃO, PODA, TRANSPORTE,
   ADMINISTRATIVO...). Não tem nenhuma relação com o "tipo de equipe"
-  operacional (MULTI, CONSTRUÇÃO como ESTRUTURA de vaga) — são coisas
+  operacional (LIGAÇÃO NOVA, CONSTRUÇÃO como ESTRUTURA de vaga) — são coisas
   diferentes que coincidem de usar as mesmas palavras.
 """
 import json
