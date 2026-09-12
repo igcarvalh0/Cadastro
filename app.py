@@ -418,13 +418,22 @@ def obter_resumo():
             prefixo = str(equipe.PREFIXO).strip() if equipe.PREFIXO is not None else ""
             folguista = eh_folguista(prefixo)
 
+            # so as vagas que batem com o vinculo do usuario -- equipe_visivel
+            # libera a equipe INTEIRA quando so uma vaga bate (pensado pro
+            # Folguista, que mistura setores), mas isso nao pode vazar pro
+            # resumo as vagas de outro setor/disciplina dentro dela (ver
+            # vaga_no_escopo).
+            composicoes_visiveis = [
+                c for c in (equipe.composicoes or []) if vaga_no_escopo(usuario, equipe, c)
+            ]
+
             # o tipo e o coordenador alimentam o filtro mesmo quando a base
             # esta filtrada fora
-            for composicao in (equipe.composicoes or []):
+            for composicao in composicoes_visiveis:
                 tipos_existentes.add(tipo_equipe_da_vaga(composicao))
                 if composicao.COORDENADOR and composicao.COORDENADOR.strip():
                     coordenadores_existentes.add(composicao.COORDENADOR.strip())
-            if folguista and equipe.composicoes:
+            if folguista and composicoes_visiveis:
                 tipos_existentes.add("FOLGUISTA")
 
             if filtro_base:
@@ -449,7 +458,7 @@ def obter_resumo():
 
             filtrando_folguista = normalizar(filtro_tipo) == "FOLGUISTA"
 
-            for composicao in (equipe.composicoes or []):
+            for composicao in composicoes_visiveis:
                 tipo = tipo_equipe_da_vaga(composicao)
 
                 if filtro_tipo:
@@ -747,7 +756,7 @@ def obter_equipes():
             ):
                 continue
             composicoes = sorted(
-                equipe.composicoes,
+                (c for c in equipe.composicoes if vaga_no_escopo(usuario, equipe, c)),
                 key=lambda item: (ordem_funcao(item.FUNÇÃO_ER), item.id),
             )
 
@@ -1290,6 +1299,30 @@ def tipos_e_setores_da_equipe(equipe):
         (tipo_equipe_da_vaga(c), (c.SETOR or "").strip() or None)
         for c in composicoes
     ]
+
+
+def vaga_no_escopo(usuario, equipe, composicao):
+    """Diz se ESTA vaga (nao a equipe inteira) bate com o vinculo do usuario.
+
+    auth.equipe_visivel libera a equipe INTEIRA quando PELO MENOS UMA vaga
+    bate — pensado pro Folguista, que mistura disciplinas e setores numa
+    unica equipe (ver o docstring de equipe_visivel). Mas isso nao filtra
+    o que aparece DENTRO da equipe: sem esta funcao, um usuario vinculado
+    so a SETOR=GSTC que enxerga o Folguista por causa de uma vaga GSTC
+    tambem via as vagas GOMAN da mesma equipe Folguista — confirmado com
+    dado real (toda equipe Folguista hoje mistura GOMAN e GSTC).
+
+    Use isto para filtrar quais vagas de uma equipe JA visivel entram numa
+    listagem/resumo/exportacao — nao para decidir se a equipe aparece
+    (isso continua com auth.equipe_visivel).
+    """
+    return auth.pode_atuar_na_base_e_tipo(
+        usuario,
+        equipe.BASE,
+        tipo_equipe_da_vaga(composicao),
+        setor=composicao.SETOR,
+        equipe_id=equipe.id,
+    )
 
 
 def setores_da_equipe(equipe):
@@ -2123,7 +2156,10 @@ def montar_planilha_alocacoes(session, usuario=None):
                 usuario, equipe.BASE, tipos_e_setores_da_equipe(equipe), equipe_id=equipe.id,
             ):
             continue
-        for composicao in sorted(equipe.composicoes or [], key=lambda c: c.id):
+        composicoes = equipe.composicoes or []
+        if usuario:
+            composicoes = [c for c in composicoes if vaga_no_escopo(usuario, equipe, c)]
+        for composicao in sorted(composicoes, key=lambda c: c.id):
             colaborador = composicao.membro.colaborador if composicao.membro else None
             linhas.append({
                 COLUNA_ALOC_COMPOSICAO_ID: composicao.id,
