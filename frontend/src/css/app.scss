@@ -276,7 +276,13 @@ body {
   color: var(--marca-clara);
 }
 
-// os utilitarios de cinza do Quasar sao fixos e nao acompanham o tema
+// os utilitarios de cinza do Quasar sao fixos e nao acompanham o tema. Esse
+// bug ja foi corrigido antes so pra 7/8/9 (as tonalidades que alguem notou
+// quebradas na hora) e voltou quando um texto novo usou grey-6 (empty
+// states do Resumo, rotulo "fixo" em Usuarios) -- cobre 6 a 9, a faixa
+// inteira usada no projeto pra texto secundario, em vez de ir tampando
+// tonalidade por tonalidade cada vez que aparece de novo.
+.text-grey-6,
 .text-grey-7,
 .text-grey-8,
 .text-grey-9 {
