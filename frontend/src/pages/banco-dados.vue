@@ -450,7 +450,11 @@
                       </q-item-label>
 
                       <q-item-label caption>
-                        SEÇÃO: {{ colaborador.secao || 'Não informada' }}
+                        SEÇÃO: {{ colaborador.secao_tratada || colaborador.secao || 'Não informada' }}
+                      </q-item-label>
+
+                      <q-item-label v-if="colaborador.tipo_ccusto" caption>
+                        Tipo de ccusto: {{ colaborador.tipo_ccusto }}
                       </q-item-label>
                     </q-item-section>
 

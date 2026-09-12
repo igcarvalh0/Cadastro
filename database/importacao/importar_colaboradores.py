@@ -2,6 +2,7 @@ import pandas as pd
 from pathlib import Path
 
 from database.database import SessionLocal
+from database.depara import secao_tratada, tipos_ccusto_dos_rateios
 from database.models import Colaborador, Rateio
 
 
@@ -158,6 +159,16 @@ def processar_planilha_colaboradores(arquivo, session, aplicar):
         for r in session.query(Rateio).filter(Rateio.CHAPA.in_(chapas)).all()
     }
 
+    # CHAPA -> códigos de rateio (existentes + os que essa planilha for
+    # adicionar), pra calcular TIPO_CCUSTO com TODOS os rateios do
+    # colaborador no final — não só o primeiro. Semeado com os rateios que
+    # já existiam antes desta importação (podem ter vindo de outra
+    # planilha, outro dia).
+    codigos_rateio_por_chapa = {}
+    for chapa_r, codigo_r, _grpccusto_r in rateios_existentes:
+        if codigo_r:
+            codigos_rateio_por_chapa.setdefault(chapa_r, []).append(codigo_r)
+
     chapas_ja_contadas = set()
     rateios_ja_adicionados = set()
 
@@ -217,6 +228,9 @@ def processar_planilha_colaboradores(arquivo, session, aplicar):
                     GRPCCUSTO=dados["grpccusto"],
                 ))
                 rateios_ja_adicionados.add(chave)
+                codigos_rateio_por_chapa.setdefault(chapa, []).append(
+                    dados["rateio_funcionario"]
+                )
                 resumo["rateios_novos"] += 1
                 resumo["detalhes_rateios"].append({
                     "chapa": chapa,
@@ -224,6 +238,16 @@ def processar_planilha_colaboradores(arquivo, session, aplicar):
                     "rateio": dados["rateio_funcionario"],
                     "grpccusto": dados["grpccusto"] or "—",
                 })
+
+    # SEÇÃO_TRATADA e TIPO_CCUSTO por último, com TODOS os rateios de cada
+    # colaborador já resolvidos (os que a planilha trouxe + os que já
+    # existiam) — ver database/depara.py.
+    for chapa in chapas_ja_contadas:
+        colaborador = colaboradores_existentes[chapa]
+        colaborador.SEÇÃO_TRATADA = secao_tratada(colaborador.SEÇÃO)
+        colaborador.TIPO_CCUSTO = tipos_ccusto_dos_rateios(
+            codigos_rateio_por_chapa.get(chapa, [])
+        )
 
     return resumo
 

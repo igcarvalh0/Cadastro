@@ -26,6 +26,7 @@ from sqlalchemy.orm import joinedload
 import auth
 from auth import exige_permissao
 from database.database import SessionLocal
+from database.depara import DE_PARA_SECAO
 from database.importacao.importar_colaboradores import (
     COLUNAS_OBRIGATORIAS as COLUNAS_OBRIGATORIAS_COLABORADORES,
     processar_planilha_colaboradores,
@@ -111,30 +112,13 @@ DE_PARA_BASES = {
     "BARRA DO CORDA": "BDC",
 }
 
-DE_PARA_SECOES = {
-    "CT 127 - SETOR ADMINISTRATIVO": "BACABAL",
-    "CT 127 - SETOR BACABAL": "BACABAL",
-    "CT 169 - SETOR BACABAL": "BACABAL",
-    "CT 169 - SETOR PRESIDENTE DUTRA": "PRESIDENTE DUTRA",
-    "CT 127 - SETOR DE ITAPECURU MIRIM": "ITAPECURU MIRIM",
-    "CT 127 - SETOR SANTA INES": "SANTA INES",
-    "CT 169 - SETOR DE BARRA DO CORDA": "BARRA DO CORDA",
-    "CT 169- SETOR PEDREIRAS": "PEDREIRAS",
-    "CT 170 - SETOR SANTA INES": "SANTA INES",
-    "CT 170 - SETOR DE BARRA DO CORDA": "BARRA DO CORDA",
-    "CT 127 - SETOR DE FROTA": "BACABAL",
-    "CT 169 - SETOR SANTA INES": "SANTA INES",
-    "CT 169 - SETOR DE ITAPECURU MIRIM": "ITAPECURU MIRIM",
-    "BACABAL": "BACABAL",
-    "ITAPECURU": "ITAPECURU MIRIM",
-    "ITAPECURU MIRIM": "ITAPECURU MIRIM",
-    "SANTA INES": "SANTA INES",
-    "SPOT STI": "SPOT STI",
-    "PEDREIRAS": "PEDREIRAS",
-    "PRES DUTRA": "PRESIDENTE DUTRA",
-    "PRESIDENTE DUTRA": "PRESIDENTE DUTRA",
-    "BARRA DO CORDA": "BARRA DO CORDA",
-}
+# DE_PARA_SECOES vinha hardcoded aqui; agora vem de database/depara.py, que
+# le o de-para importado uma unica vez da planilha do Igor (ver o modulo
+# pra origem e data). E a MESMA traducao usada tanto pra agrupar "nao
+# alocados" por base (base_da_secao, logo abaixo) quanto pra coluna "Secao
+# tratada" da tela de Colaboradores (ver ComposicaoEquipe... na verdade
+# Colaborador.SEÇÃO_TRATADA, calculada em importar_colaboradores.py).
+DE_PARA_SECOES = DE_PARA_SECAO
 
 ORDEM_FUNCOES = {
     "ENCARREGADO": 1,
@@ -2079,6 +2063,14 @@ COLUNAS_FIXAS_PLANILHA_ALOCACOES = (
     "SETOR",
     "NOME_ATUAL",
     COLUNA_ALOC_CHAPA,
+    # Seção tratada e tipo de ccusto do colaborador que ocupa a vaga HOJE —
+    # em branco quando a vaga esta livre. So informativo (nao e lido pela
+    # analise, so a coluna CHAPA importa pra decidir alocar/trocar/remover).
+    # Sao do CADASTRO do colaborador, nao da vaga: um colaborador de tipo de
+    # ccusto CONSTRUÇÃO pode estar (e continua podendo ser alocado) numa
+    # vaga de TIPO EQUIPE MULTI — ver database/depara.py.
+    "SEÇÃO_TRATADA",
+    "TIPO_CCUSTO",
 )
 
 COLUNAS_PLANILHA_ATIVOS = (
@@ -2090,6 +2082,7 @@ COLUNAS_PLANILHA_ATIVOS = (
     "ADMISSÃO",
     "RATEIO",
     "GRPCCUSTO",
+    "TIPO_CCUSTO",
 )
 
 OPERACAO_POR_ACAO_ALOCACAO = {
@@ -2141,6 +2134,8 @@ def montar_planilha_alocacoes(session, usuario=None):
                 "SETOR": composicao.SETOR or "",
                 "NOME_ATUAL": colaborador.NOME if colaborador else "",
                 COLUNA_ALOC_CHAPA: colaborador.CHAPA if colaborador else "",
+                "SEÇÃO_TRATADA": (colaborador.SEÇÃO_TRATADA or "") if colaborador else "",
+                "TIPO_CCUSTO": (colaborador.TIPO_CCUSTO or "") if colaborador else "",
             })
 
     return pd.DataFrame(linhas, columns=list(COLUNAS_FIXAS_PLANILHA_ALOCACOES))
@@ -2191,11 +2186,15 @@ def montar_planilha_ativos(session):
             "CHAPA": colaborador.CHAPA,
             "NOME": colaborador.NOME,
             "FUNÇÃO": colaborador.FUNÇÃO or "",
-            "SEÇÃO": colaborador.SEÇÃO or "",
+            # texto tratado (ver database/depara.py), no lugar do texto cru
+            # que vinha antes — cai pro texto cru so se a SEÇÃO nao tiver
+            # tradução cadastrada
+            "SEÇÃO": colaborador.SEÇÃO_TRATADA or colaborador.SEÇÃO or "",
             "SITUAÇÃO": colaborador.SITUAÇÃO or "",
             "ADMISSÃO": colaborador.ADMISSÃO,
             "RATEIO": " / ".join(rateio.get("rateios", [])),
             "GRPCCUSTO": " / ".join(rateio.get("grupos", [])),
+            "TIPO_CCUSTO": colaborador.TIPO_CCUSTO or "",
         })
 
     return pd.DataFrame(linhas, columns=list(COLUNAS_PLANILHA_ATIVOS))
@@ -2738,6 +2737,8 @@ def obter_colaboradores():
                 "nome": colaborador.NOME or "",
                 "funcao": colaborador.FUNÇÃO or "",
                 "secao": colaborador.SEÇÃO or "",
+                "secao_tratada": colaborador.SEÇÃO_TRATADA or "",
+                "tipo_ccusto": colaborador.TIPO_CCUSTO or "",
                 "base": dados_base["nome"],
                 "codigo_base": dados_base["codigo"],
                 "alocado": chapa in chapas_alocadas,

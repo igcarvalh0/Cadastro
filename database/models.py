@@ -28,6 +28,20 @@ class Colaborador(Base):
     SEÇÃO = Column(String)
     SITUAÇÃO = Column(String)
 
+    # Calculados a partir do de-para importado uma unica vez de uma
+    # planilha do RH (ver database/depara.py) -- persistidos (nao so
+    # calculados na hora de exibir) pra tela e exportacao sempre baterem,
+    # mas recalculaveis a qualquer momento (recalcular_secao_tipo_ccusto.py
+    # ou a cada nova importacao de colaboradores/rateios).
+    #
+    # SEÇÃO_TRATADA: nome de base tratado pra SEÇÃO (BACABAL, PRES DUTRA...).
+    # TIPO_CCUSTO: tipo de ccusto tratado (CONSTRUÇÃO, PODA, TRANSPORTE...)
+    # de TODOS os rateios do colaborador, juntos (" / " quando ele tem mais
+    # de um) -- e so uma classificacao de cadastro/custeio, NUNCA restringe
+    # em qual equipe o colaborador pode ser alocado operacionalmente.
+    SEÇÃO_TRATADA = Column(String)
+    TIPO_CCUSTO = Column(String)
+
     rateios = relationship(
         "Rateio",
         back_populates="colaborador",

@@ -25,6 +25,7 @@ pip install -r requirements.txt
    - `007_add_niveis_permissoes.sql` — permissoes por nivel personalizaveis pelo Administrador.
    - `008_add_hierarquia_usuarios.sql` — hierarquia Gerente -> Coordenador -> Supervisor.
    - `009_add_indice_equipe_id.sql` — índice em composicoes_equipes.equipe_id (melhora a carga de equipes/resumo).
+   - `010_add_secao_tratada_tipo_ccusto.sql` — SEÇÃO_TRATADA e TIPO_CCUSTO em colaboradores (ver database/depara.py); depois de aplicar, rode `python -m database.importacao.recalcular_secao_tipo_ccusto` para preencher quem já estava cadastrado.
 
    Cada arquivo traz no cabecalho o que conferir antes de rodar.
 
