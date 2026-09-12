@@ -336,6 +336,14 @@ function preferoMenosAnimacaoFundo() {
   return window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
 }
 
+// Quem pede "menos movimento" no SO/navegador nao quer necessariamente o
+// fundo travado (isso costuma vir ligado por bateria/performance, nao so
+// por sensibilidade a movimento) — a recomendacao de acessibilidade e
+// reduzir o movimento, nao elimina-lo. Guardado uma vez no mount: mudar a
+// preferencia com a pagina aberta e caso raro demais pra valer recalcular
+// a cada quadro.
+let fatorMovimentoFundo = 1
+
 const ladrilhos = [
   { x: -1, y: -1, cor: '#8E1834' },
   { x: 0, y: -1, cor: '#6B1025' },
@@ -422,9 +430,9 @@ function desenharRede(ctx, largura, altura) {
 
   // move e faz quicar nas bordas, bem devagar
   for (const ponto of pontosRede) {
-    ponto.x += ponto.vx
-    ponto.y += ponto.vy
-    ponto.pulso += 0.02
+    ponto.x += ponto.vx * fatorMovimentoFundo
+    ponto.y += ponto.vy * fatorMovimentoFundo
+    ponto.pulso += 0.02 * fatorMovimentoFundo
 
     if (ponto.x < 0 || ponto.x > largura) ponto.vx *= -1
     if (ponto.y < 0 || ponto.y > altura) ponto.vy *= -1
@@ -478,16 +486,16 @@ function animarFundo() {
   const canvas = canvasFundoEl.value
   if (!canvas || !contextoFundo) return
 
-  tempoFundo += 0.008
+  tempoFundo += 0.008 * fatorMovimentoFundo
 
   contextoFundo.clearRect(0, 0, canvas.width, canvas.height)
   desenharRede(contextoFundo, canvas.width, canvas.height)
 
   particulas.forEach((particula, indice) => {
     const anguloAtual = -0.55 + Math.sin(tempoFundo + indice) * 0.15
-    particula.x += Math.cos(anguloAtual) * particula.velocidade
-    particula.y += Math.sin(anguloAtual) * particula.velocidade
-    particula.pulso += 0.02
+    particula.x += Math.cos(anguloAtual) * particula.velocidade * fatorMovimentoFundo
+    particula.y += Math.sin(anguloAtual) * particula.velocidade * fatorMovimentoFundo
+    particula.pulso += 0.02 * fatorMovimentoFundo
 
     const opacidadeAtual = particula.opacidade + Math.sin(particula.pulso) * 0.04
 
@@ -515,7 +523,7 @@ function animarFundo() {
 }
 
 function iniciarFundo() {
-  if (animandoFundo || preferoMenosAnimacaoFundo()) return
+  if (animandoFundo) return
 
   animandoFundo = true
   quadroAnimacao = requestAnimationFrame(animarFundo)
@@ -552,12 +560,9 @@ onMounted(async () => {
   await nextTick()
 
   if (canvasFundoEl.value) {
+    fatorMovimentoFundo = preferoMenosAnimacaoFundo() ? 0.15 : 1
     contextoFundo = canvasFundoEl.value.getContext('2d')
     redimensionarCanvas()
-    // desenha um quadro logo de cara: quem pediu menos animação fica com o
-    // fundo parado, em vez de ficar sem fundo nenhum
-    contextoFundo.clearRect(0, 0, canvasFundoEl.value.width, canvasFundoEl.value.height)
-    desenharRede(contextoFundo, canvasFundoEl.value.width, canvasFundoEl.value.height)
     window.addEventListener('resize', redimensionarCanvas)
     document.addEventListener('visibilitychange', aoTrocarVisibilidadeFundo)
     iniciarFundo()
