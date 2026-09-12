@@ -3071,9 +3071,14 @@ def editar_alocacao():
     session = SessionLocal()
     try:
         with session.begin():
+            # Sem joinedload aqui de proposito: FOR UPDATE com LEFT OUTER JOIN
+            # (o que joinedload gera) da erro no Postgres ("FOR UPDATE cannot
+            # be applied to the nullable side of an outer join") -- por isso
+            # TODA troca de colaborador falhava com erro generico. equipe_id
+            # e obrigatorio, entao o acesso a composicao.equipe mais abaixo
+            # so faz um SELECT simples (lazy load), sem lock e sem problema.
             composicao = (
                 session.query(ComposicaoEquipe)
-                .options(joinedload(ComposicaoEquipe.equipe))
                 .filter(ComposicaoEquipe.id == composicao_id)
                 .with_for_update()
                 .first()
