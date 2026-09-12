@@ -56,6 +56,25 @@ def normalizar_linha_colaborador(linha):
     }, None
 
 
+RÓTULOS_CAMPOS = {
+    "NOME": "Nome",
+    "FUNÇÃO": "Função",
+    "ADMISSÃO": "Admissão",
+    "SEÇÃO": "Seção",
+    "SITUAÇÃO": "Situação",
+}
+
+
+def _texto_exibicao(valor):
+    """Formata um valor de campo (string, date ou None) pro 'de-para' que a
+    tela de Usuários mostra — sempre texto, nunca objeto date/None cru."""
+    if valor is None:
+        return "—"
+    if hasattr(valor, "strftime"):
+        return valor.strftime("%d/%m/%Y")
+    return str(valor)
+
+
 def processar_planilha_colaboradores(arquivo, session, aplicar):
     """Le a planilha inteira e faz o upsert de todos os colaboradores/rateios
     na sessao dada, em lote — nao linha a linha.
@@ -87,14 +106,40 @@ def processar_planilha_colaboradores(arquivo, session, aplicar):
     if faltando:
         raise ValueError(f"A planilha precisa das colunas {', '.join(faltando)}.")
 
-    resumo = {"criados": 0, "atualizados": 0, "rateios_novos": 0, "erros": []}
+    resumo = {
+        "criados": 0,
+        "atualizados": 0,
+        "rateios_novos": 0,
+        "erros": [],
+        # "de-para" pra tela de Usuários: 1 entrada por CHAPA (nao por linha
+        # de rateio), pra clicar no chip "novos"/"atualizados" e ver o que
+        # mudou de fato
+        "detalhes_criados": [],
+        "detalhes_atualizados": [],
+        "detalhes_rateios": [],
+    }
+
+    def _celula(linha, coluna):
+        """Valor cru de uma célula, já como texto — usado só pra IDENTIFICAR a
+        linha com erro na tela (a linha nem passou pela normalização)."""
+        valor = linha.get(coluna)
+        if valor is None or (isinstance(valor, float) and pd.isna(valor)):
+            return ""
+        texto = str(valor).strip()
+        return texto[:-2] if texto.endswith(".0") else texto
 
     linhas_validas = []
     for indice, linha in df.iterrows():
         numero = int(indice) + 2
         dados, erro = normalizar_linha_colaborador(linha)
         if erro:
-            resumo["erros"].append({"linha": numero, "erro": erro})
+            resumo["erros"].append({
+                "linha": numero,
+                "erro": erro,
+                "chapa": _celula(linha, "CHAPA"),
+                "nome": _celula(linha, "NOME"),
+                "secao": _celula(linha, "SEÇÃO"),
+            })
             continue
         linhas_validas.append(dados)
 
@@ -123,18 +168,43 @@ def processar_planilha_colaboradores(arquivo, session, aplicar):
             for campo in ("NOME", "FUNÇÃO", "ADMISSÃO", "SEÇÃO", "SITUAÇÃO")
         }
 
+        primeira_vez = chapa not in chapas_ja_contadas
         colaborador = colaboradores_existentes.get(chapa)
         if colaborador:
+            if primeira_vez:
+                mudancas = [
+                    {
+                        "campo": RÓTULOS_CAMPOS[campo],
+                        "de": _texto_exibicao(getattr(colaborador, campo)),
+                        "para": _texto_exibicao(valor),
+                    }
+                    for campo, valor in campos.items()
+                    if getattr(colaborador, campo) != valor
+                ]
+                resumo["detalhes_atualizados"].append({
+                    "chapa": chapa,
+                    "nome": campos["NOME"] or colaborador.NOME or "",
+                    "mudancas": mudancas,
+                })
+
             for campo, valor in campos.items():
                 setattr(colaborador, campo, valor)
-            if chapa not in chapas_ja_contadas:
+            if primeira_vez:
                 resumo["atualizados"] += 1
         else:
             colaborador = Colaborador(CHAPA=chapa, **campos)
             session.add(colaborador)
             colaboradores_existentes[chapa] = colaborador
-            if chapa not in chapas_ja_contadas:
+            if primeira_vez:
                 resumo["criados"] += 1
+                resumo["detalhes_criados"].append({
+                    "chapa": chapa,
+                    "nome": campos["NOME"] or "",
+                    "funcao": campos["FUNÇÃO"] or "",
+                    "secao": campos["SEÇÃO"] or "",
+                    "situacao": campos["SITUAÇÃO"] or "",
+                    "admissao": _texto_exibicao(campos["ADMISSÃO"]),
+                })
 
         chapas_ja_contadas.add(chapa)
 
@@ -148,6 +218,12 @@ def processar_planilha_colaboradores(arquivo, session, aplicar):
                 ))
                 rateios_ja_adicionados.add(chave)
                 resumo["rateios_novos"] += 1
+                resumo["detalhes_rateios"].append({
+                    "chapa": chapa,
+                    "nome": campos["NOME"] or "",
+                    "rateio": dados["rateio_funcionario"],
+                    "grpccusto": dados["grpccusto"] or "—",
+                })
 
     return resumo
 

@@ -7,6 +7,9 @@ from functools import lru_cache
 from pathlib import Path
 
 import pandas as pd
+from openpyxl.formatting.rule import FormulaRule
+from openpyxl.styles import Font, PatternFill
+from openpyxl.utils import get_column_letter
 
 from flask import (
     Flask,
@@ -23,12 +26,16 @@ from sqlalchemy.orm import joinedload
 import auth
 from auth import exige_permissao
 from database.database import SessionLocal
-from database.importacao.importar_colaboradores import processar_planilha_colaboradores
+from database.importacao.importar_colaboradores import (
+    COLUNAS_OBRIGATORIAS as COLUNAS_OBRIGATORIAS_COLABORADORES,
+    processar_planilha_colaboradores,
+)
 from database.models import (
     Colaborador,
     ComposicaoEquipe,
     Equipe,
     MembroEquipe,
+    Rateio,
     Usuario,
 )
 
@@ -395,6 +402,7 @@ def obter_resumo():
         filtro_base = request.args.get("base", "").strip()
         filtro_tipo = request.args.get("tipo", "").strip()
         filtro_setor = request.args.get("setor", "").strip()
+        filtro_coordenador = request.args.get("coordenador", "").strip()
 
         equipes = (
             session.query(Equipe)
@@ -410,6 +418,7 @@ def obter_resumo():
         resumo_bases = {}
         pessoas_disponiveis = {}
         tipos_existentes = set()
+        coordenadores_existentes = set()
 
         for equipe in equipes:
             if not auth.equipe_visivel(
@@ -425,9 +434,12 @@ def obter_resumo():
             prefixo = str(equipe.PREFIXO).strip() if equipe.PREFIXO is not None else ""
             folguista = eh_folguista(prefixo)
 
-            # o tipo alimenta o filtro mesmo quando a base esta filtrada fora
+            # o tipo e o coordenador alimentam o filtro mesmo quando a base
+            # esta filtrada fora
             for composicao in (equipe.composicoes or []):
                 tipos_existentes.add(tipo_equipe_da_vaga(composicao))
+                if composicao.COORDENADOR and composicao.COORDENADOR.strip():
+                    coordenadores_existentes.add(composicao.COORDENADOR.strip())
             if folguista and equipe.composicoes:
                 tipos_existentes.add("FOLGUISTA")
 
@@ -466,6 +478,9 @@ def obter_resumo():
                         continue
 
                 if filtro_setor and normalizar(composicao.SETOR or "") != normalizar(filtro_setor):
+                    continue
+
+                if filtro_coordenador and normalizar(composicao.COORDENADOR or "") != normalizar(filtro_coordenador):
                     continue
 
                 funcao_exibicao = padronizar_funcao(composicao.FUNÇÃO_ER)
@@ -627,16 +642,21 @@ def obter_resumo():
         # So as contagens por base e funcao. Os nomes ficam de fora de proposito:
         # eram 175 KB dos 185 KB da resposta, e a tela mostra apenas o numero ate
         # alguem abrir uma celula. Os nomes vem por /api/pessoas-nao-alocadas.
+        # So busca as 3 colunas usadas aqui (nao o objeto Colaborador inteiro):
+        # mais barato de montar quando a tabela tem alguns milhares de linhas.
         nao_alocados = {}
-        for colab in session.query(Colaborador).all():
-            if str(colab.CHAPA).strip() in chapas_alocadas:
+        colaboradores_cols = session.query(
+            Colaborador.CHAPA, Colaborador.SEÇÃO, Colaborador.FUNÇÃO
+        ).all()
+        for chapa, secao, funcao_bruta in colaboradores_cols:
+            if str(chapa).strip() in chapas_alocadas:
                 continue
 
-            funcao = padronizar_funcao(colab.FUNÇÃO)
+            funcao = padronizar_funcao(funcao_bruta)
             if funcao not in ORDEM_FUNCOES:
                 continue
 
-            dados_base = base_da_secao(colab.SEÇÃO)
+            dados_base = base_da_secao(secao)
             registro = nao_alocados.setdefault(dados_base["codigo"], {
                 "base": dados_base["nome"],
                 "codigo": dados_base["codigo"],
@@ -655,6 +675,8 @@ def obter_resumo():
             "tipo_selecionado": filtro_tipo,
             "setores_filtro": list(SETORES_NEGOCIO),
             "setor_selecionado": filtro_setor,
+            "coordenadores_filtro": sorted(coordenadores_existentes),
+            "coordenador_selecionado": filtro_coordenador,
             "pessoas_disponiveis": lista_disponiveis,
             "nao_alocados_por_base": list(nao_alocados.values()),
         })
@@ -2066,6 +2088,8 @@ COLUNAS_PLANILHA_ATIVOS = (
     "SEÇÃO",
     "SITUAÇÃO",
     "ADMISSÃO",
+    "RATEIO",
+    "GRPCCUSTO",
 )
 
 OPERACAO_POR_ACAO_ALOCACAO = {
@@ -2122,28 +2146,57 @@ def montar_planilha_alocacoes(session, usuario=None):
     return pd.DataFrame(linhas, columns=list(COLUNAS_FIXAS_PLANILHA_ALOCACOES))
 
 
+# Situações que contam como "na empresa" para a aba de consulta. FÉRIAS entra
+# porque quem está de férias continua no quadro e é alocado normalmente no
+# planejamento — deixar de fora só escondia a CHAPA de quem o Igor precisava
+# procurar. A coluna SITUAÇÃO vai na planilha, então dá pra ver quem está em
+# quê antes de usar a chapa.
+SITUACOES_PLANILHA_ATIVOS = ("ATIVO", "FÉRIAS")
+
+
 def montar_planilha_ativos(session):
-    """Aba de consulta com todos os colaboradores ativos cadastrados —
-    facilita preencher a coluna CHAPA da aba Alocações, mas nao e lida pela
-    analise (a aba de alocacoes sozinha e quem manda)."""
+    """Aba de consulta com os colaboradores que estão no quadro (ver
+    SITUACOES_PLANILHA_ATIVOS) — facilita preencher a coluna CHAPA da aba
+    Alocações, mas nao e lida pela analise (a aba de alocacoes sozinha e quem
+    manda)."""
     colaboradores = (
         session.query(Colaborador)
-        .filter(func.upper(func.trim(Colaborador.SITUAÇÃO)) == "ATIVO")
+        .filter(
+            func.upper(func.trim(Colaborador.SITUAÇÃO)).in_(SITUACOES_PLANILHA_ATIVOS)
+        )
         .order_by(Colaborador.NOME)
         .all()
     )
 
-    linhas = [
-        {
+    # Rateio fica em tabela propria, com 1 linha por rateio — quem e rateado
+    # entre centros de custo tem 2 ou 3. Aqui tudo vira UMA linha por pessoa
+    # (com os codigos juntos na mesma celula) pra aba continuar servindo de
+    # consulta por CHAPA, sem a mesma pessoa aparecer repetida. Uma consulta
+    # so, nao uma por colaborador (o Postgres e remoto — ver a memoria do
+    # projeto sobre o banco da Neon).
+    rateios_por_chapa = {}
+    for chapa, rateio, grupo in session.query(
+        Rateio.CHAPA, Rateio.RATEIO_FUNCIONARIO, Rateio.GRPCCUSTO
+    ).all():
+        dados = rateios_por_chapa.setdefault(chapa, {"rateios": [], "grupos": []})
+        if rateio and rateio not in dados["rateios"]:
+            dados["rateios"].append(rateio)
+        if grupo and grupo not in dados["grupos"]:
+            dados["grupos"].append(grupo)
+
+    linhas = []
+    for colaborador in colaboradores:
+        rateio = rateios_por_chapa.get(colaborador.CHAPA, {})
+        linhas.append({
             "CHAPA": colaborador.CHAPA,
             "NOME": colaborador.NOME,
             "FUNÇÃO": colaborador.FUNÇÃO or "",
             "SEÇÃO": colaborador.SEÇÃO or "",
             "SITUAÇÃO": colaborador.SITUAÇÃO or "",
             "ADMISSÃO": colaborador.ADMISSÃO,
-        }
-        for colaborador in colaboradores
-    ]
+            "RATEIO": " / ".join(rateio.get("rateios", [])),
+            "GRPCCUSTO": " / ".join(rateio.get("grupos", [])),
+        })
 
     return pd.DataFrame(linhas, columns=list(COLUNAS_PLANILHA_ATIVOS))
 
@@ -2295,6 +2348,43 @@ def analisar_planilha_alocacoes(arquivo, session):
     return plano
 
 
+def marcar_duplicados_alocacoes(planilha, df_alocacoes):
+    """Pinta de vermelho, na aba Alocações, o NOME_ATUAL e a CHAPA que
+    aparecerem em mais de uma linha.
+
+    CHAPA repetida é justamente o que a análise recusa ("a CHAPA já aparece em
+    outra linha de alocação"), então o Excel avisa antes do upload; NOME_ATUAL
+    repetido mostra quem já ocupa duas vagas hoje.
+
+    A regra é por FÓRMULA e não pelo "duplicateValues" nativo do Excel porque
+    aquele marcaria também as várias linhas de vaga vazia como duplicadas
+    entre si — aqui o teste de célula não-vazia vem junto.
+    """
+    ultima_linha = len(df_alocacoes) + 1  # +1 do cabeçalho
+    if ultima_linha < 2:
+        return
+
+    vermelho = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
+    fonte_vermelha = Font(color="9C0006", bold=True)
+
+    colunas = list(df_alocacoes.columns)
+    for nome_coluna in ("NOME_ATUAL", COLUNA_ALOC_CHAPA):
+        letra = get_column_letter(colunas.index(nome_coluna) + 1)
+        intervalo = f"{letra}2:{letra}{ultima_linha}"
+        planilha.conditional_formatting.add(
+            intervalo,
+            FormulaRule(
+                formula=[
+                    f'AND({letra}2<>"",'
+                    f"COUNTIF(${letra}$2:${letra}${ultima_linha},{letra}2)>1)"
+                ],
+                fill=vermelho,
+                font=fonte_vermelha,
+                stopIfTrue=False,
+            ),
+        )
+
+
 @app.route("/api/alocacoes/planilha", methods=["GET"])
 @exige_permissao(auth.VER_EQUIPES)
 def baixar_planilha_alocacoes():
@@ -2318,6 +2408,9 @@ def baixar_planilha_alocacoes():
                         12, largura + 3
                     )
                 planilha.freeze_panes = "A2"
+
+                if nome_aba == "Alocações":
+                    marcar_duplicados_alocacoes(planilha, df_alocacoes)
 
         buffer.seek(0)
         return send_file(
@@ -2665,6 +2758,68 @@ def obter_colaboradores():
 # Administrador (GERENCIAR_COLABORADORES). A "previa" roda a MESMA lógica de
 # upsert dentro de uma transação e dá rollback no final, em vez de manter um
 # segundo caminho de código só para simular o resultado.
+
+@app.route("/api/colaboradores/planilha/modelo", methods=["GET"])
+@exige_permissao(auth.GERENCIAR_COLABORADORES)
+def baixar_modelo_planilha_colaboradores():
+    """Planilha em branco (só cabeçalho + 1 linha de exemplo) com as colunas
+    que processar_planilha_colaboradores espera — ponto de partida pra quem
+    vai montar a lista de colaboradores, sem precisar adivinhar os nomes das
+    colunas."""
+    try:
+        # ordem pedida pelo Igor — não é a ordem de COLUNAS_OBRIGATORIAS
+        # (que só define o que é exigido, não a disposição na planilha)
+        colunas = [
+            "CHAPA",
+            "NOME",
+            "FUNÇÃO",
+            "SEÇÃO",
+            "SITUAÇÃO",
+            "ADMISSÃO",
+            "RATEIO_FUNCIONARIO",
+            "GRPCCUSTO",
+        ]
+        assert set(COLUNAS_OBRIGATORIAS_COLABORADORES) <= set(colunas)
+        linha_exemplo = {
+            "CHAPA": "12345",
+            "NOME": "FULANO DE TAL",
+            "FUNÇÃO": "ELETRICISTA",
+            "ADMISSÃO": "01/01/2024",
+            "SEÇÃO": "MA-BCB-O007M",
+            "SITUAÇÃO": "ATIVO",
+            "RATEIO_FUNCIONARIO": "",
+            "GRPCCUSTO": "",
+        }
+        df = pd.DataFrame([linha_exemplo], columns=colunas)
+
+        buffer = io.BytesIO()
+        with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+            df.to_excel(writer, index=False, sheet_name="Colaboradores")
+            planilha = writer.sheets["Colaboradores"]
+            for coluna in planilha.columns:
+                largura = max(
+                    len(str(celula.value)) if celula.value is not None else 0
+                    for celula in coluna
+                )
+                planilha.column_dimensions[coluna[0].column_letter].width = max(
+                    14, largura + 3
+                )
+            planilha.freeze_panes = "A2"
+
+        buffer.seek(0)
+        return send_file(
+            buffer,
+            mimetype=(
+                "application/vnd.openxmlformats-officedocument"
+                ".spreadsheetml.sheet"
+            ),
+            as_attachment=True,
+            download_name="cadastro-colaboradores.xlsx",
+        )
+    except Exception as erro:
+        print(f"[ERRO] baixar_modelo_planilha_colaboradores: {erro}")
+        return jsonify({"erro": "Não foi possível gerar o modelo."}), 500
+
 
 @app.route("/api/colaboradores/planilha/previa", methods=["POST"])
 @exige_permissao(auth.GERENCIAR_COLABORADORES)
@@ -3117,6 +3272,18 @@ def criar_usuario():
     if problema:
         return jsonify({"erro": problema}), 400
 
+    # so quem ja ignora vinculos (Administrador) pode criar outro
+    # Administrador. Sem isso, GERENCIAR_USUARIOS por si so bastaria para
+    # um nivel promover alguem (ou a si mesmo, via edicao) ao nivel mais
+    # alto do sistema, caso esse nivel um dia ganhe essa permissao pela
+    # tela de Niveis de acesso.
+    if campos["nivel"] == auth.NIVEL_ADMINISTRADOR:
+        eu = auth.usuario_logado()
+        if not (eu or {}).get("ignora_vinculos"):
+            return jsonify({
+                "erro": "Só um Administrador pode criar outro Administrador."
+            }), 403
+
     senha = str(dados.get("senha", ""))
     problema_senha = auth.validar_senha(senha)
 
@@ -3202,6 +3369,18 @@ def atualizar_usuario(usuario_id):
             return jsonify({"erro": "Já existe um usuário com esse login."}), 400
 
         eu = auth.usuario_logado()
+
+        # mesma trava de criar_usuario: promover alguem a Administrador so
+        # pode quem ja ignora vinculos
+        if (
+            campos["nivel"] == auth.NIVEL_ADMINISTRADOR
+            and usuario.NIVEL != auth.NIVEL_ADMINISTRADOR
+            and not (eu or {}).get("ignora_vinculos")
+        ):
+            return jsonify({
+                "erro": "Só um Administrador pode promover alguém a Administrador."
+            }), 403
+
         virando_comum = campos["nivel"] != auth.NIVEL_ADMINISTRADOR or not campos["ativo"]
 
         # travas para nao sobrar zero administrador ativo — e para ninguem

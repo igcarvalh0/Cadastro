@@ -139,6 +139,26 @@
           <q-separator />
 
           <q-card-section>
+            <div class="q-mb-md">
+              <q-btn
+                unelevated
+                rounded
+                no-caps
+                dense
+                color="positive"
+                icon="download"
+                label="Baixar planilha modelo"
+                :loading="baixandoModeloColaboradores"
+                class="btn-exportar"
+                @click="baixarModeloColaboradores"
+              />
+              <div class="text-caption text-grey-7 q-mt-sm">
+                Traz as colunas certas e uma linha de exemplo — preencha uma
+                linha por colaborador (e uma linha extra por rateio, se houver
+                mais de um) e envie abaixo.
+              </div>
+            </div>
+
             <div class="row q-col-gutter-md items-start">
               <div class="col-12 col-md">
                 <q-file
@@ -168,22 +188,25 @@
               </div>
             </div>
 
+            <!--
+              Os 4 chips são o resumo clicável da análise: cada um abre o
+              MESMO diálogo (detalheImportacao guarda qual), que troca só as
+              colunas da tabela. Um diálogo por tipo seria 4 blocos quase
+              idênticos de markup.
+            -->
             <div v-if="resumoColaboradores" class="q-mt-md">
               <div class="row q-gutter-sm q-mb-sm">
-                <q-chip color="positive" text-color="white">
-                  {{ resumoColaboradores.criados || 0 }} novo(s)
-                </q-chip>
-                <q-chip color="primary" text-color="white">
-                  {{ resumoColaboradores.atualizados || 0 }} atualizado(s)
-                </q-chip>
-                <q-chip color="grey-7" text-color="white">
-                  {{ resumoColaboradores.rateios_novos || 0 }} rateio(s) novo(s)
-                </q-chip>
                 <q-chip
-                  :color="resumoColaboradores.erros?.length ? 'negative' : 'grey-5'"
+                  v-for="chip in chipsImportacao"
+                  :key="chip.tipo"
+                  :color="chip.cor"
                   text-color="white"
+                  :clickable="chip.total > 0"
+                  @click="abrirDetalheImportacao(chip.tipo)"
                 >
-                  {{ resumoColaboradores.erros?.length || 0 }} com erro
+                  {{ chip.total }} {{ chip.rotulo }}
+                  <q-icon v-if="chip.total > 0" name="visibility" size="16px" class="q-ml-xs" />
+                  <q-tooltip v-if="chip.total > 0">Clique para ver os detalhes</q-tooltip>
                 </q-chip>
               </div>
 
@@ -191,10 +214,10 @@
                 v-if="resumoColaboradores.erros?.length"
                 class="bg-red-1 text-negative q-mb-sm"
                 rounded
+                dense
               >
-                <div v-for="(item, indice) in resumoColaboradores.erros" :key="indice">
-                  Linha {{ item.linha }}: {{ item.erro }}
-                </div>
+                {{ resumoColaboradores.erros.length }} linha(s) com erro impedem a
+                aplicação. Clique no chip vermelho para ver quais.
               </q-banner>
 
               <q-btn
@@ -320,8 +343,8 @@
 
         <q-dialog v-model="dialogAberto">
           <q-card class="cartao-formulario">
-            <q-card-section class="row items-center q-pb-sm">
-              <div class="text-h6">
+            <q-card-section class="row items-center q-py-sm">
+              <div class="text-subtitle1 text-weight-bold">
                 {{ editando ? 'Editar usuário' : 'Novo usuário' }}
               </div>
 
@@ -332,7 +355,7 @@
 
             <q-separator />
 
-            <q-card-section class="q-gutter-md">
+            <q-card-section class="q-gutter-sm q-px-md q-py-sm corpo-formulario">
               <q-banner
                 v-if="erroFormulario"
                 dense
@@ -413,12 +436,14 @@
                   </template>
 
                   <template v-else>
-                    Sem nenhum vínculo, a pessoa enxerga todas as equipes.
-                    Escolha valores para restringir.
+                    Cada vínculo preenchido filtra uma dimensão; os que ficam
+                    em branco não restringem. Só SETOR = todas as equipes
+                    daquele setor, em qualquer base.
+                    <strong>Sem nenhum vínculo a pessoa não enxerga equipe alguma.</strong>
                   </template>
                 </div>
 
-                <div v-if="!nivelIgnoraVinculos" class="q-gutter-md">
+                <div v-if="!nivelIgnoraVinculos" class="q-gutter-sm">
                   <template v-for="(rotulo, tipo) in tiposVinculo" :key="tipo">
                     <q-select
                       v-if="tipo === 'EQUIPE'"
@@ -453,16 +478,137 @@
 
             <q-separator />
 
-            <q-card-actions align="right">
-              <q-btn v-close-popup flat label="Cancelar" />
+            <q-card-actions align="right" class="q-py-sm">
+              <q-btn v-close-popup flat dense label="Cancelar" />
 
               <q-btn
+                dense
                 color="primary"
                 :label="editando ? 'Salvar' : 'Criar'"
                 :loading="salvando"
                 @click="salvar"
               />
             </q-card-actions>
+          </q-card>
+        </q-dialog>
+
+        <!-- ================================================== -->
+        <!-- DETALHE DA IMPORTAÇÃO (novos / atualizados / rateios / erros) -->
+        <!-- ================================================== -->
+
+        <q-dialog v-model="dialogDetalheImportacao">
+          <q-card style="width: 820px; max-width: 94vw">
+            <q-card-section class="row items-center q-py-sm">
+              <div class="text-h6">{{ tituloDetalheImportacao }}</div>
+              <q-space />
+              <q-btn v-close-popup flat round dense icon="close" />
+            </q-card-section>
+
+            <q-separator />
+
+            <q-card-section class="q-pa-none" style="max-height: 62vh; overflow: auto">
+              <q-markup-table flat dense separator="horizontal" class="tabela-detalhe">
+                <thead>
+                  <tr v-if="detalheImportacao === 'criados'">
+                    <th class="text-left">Chapa</th>
+                    <th class="text-left">Nome</th>
+                    <th class="text-left">Função</th>
+                    <th class="text-left">Seção</th>
+                    <th class="text-left">Situação</th>
+                    <th class="text-left">Admissão</th>
+                  </tr>
+                  <tr v-else-if="detalheImportacao === 'atualizados'">
+                    <th class="text-left">Chapa</th>
+                    <th class="text-left">Nome</th>
+                    <th class="text-left">Campo</th>
+                    <th class="text-left">De</th>
+                    <th class="text-left">Para</th>
+                  </tr>
+                  <tr v-else-if="detalheImportacao === 'rateios'">
+                    <th class="text-left">Chapa</th>
+                    <th class="text-left">Nome</th>
+                    <th class="text-left">Rateio</th>
+                    <th class="text-left">Grupo de custo</th>
+                  </tr>
+                  <tr v-else>
+                    <th class="text-left">Linha</th>
+                    <th class="text-left">Chapa</th>
+                    <th class="text-left">Nome</th>
+                    <th class="text-left">Seção</th>
+                    <th class="text-left">Erro</th>
+                  </tr>
+                </thead>
+
+                <tbody v-if="detalheImportacao === 'criados'">
+                  <tr v-for="item in resumoColaboradores?.detalhes_criados || []" :key="item.chapa">
+                    <td>{{ item.chapa }}</td>
+                    <td>{{ item.nome || '—' }}</td>
+                    <td>{{ item.funcao || '—' }}</td>
+                    <td>{{ item.secao || '—' }}</td>
+                    <td>{{ item.situacao || '—' }}</td>
+                    <td>{{ item.admissao }}</td>
+                  </tr>
+                </tbody>
+
+                <!--
+                  Atualizados vira uma linha POR MUDANÇA (de-para), não por
+                  colaborador: chapa/nome só aparecem na primeira linha de
+                  cada pessoa, pra leitura ficar em bloco.
+                -->
+                <tbody v-else-if="detalheImportacao === 'atualizados'">
+                  <template
+                    v-for="item in resumoColaboradores?.detalhes_atualizados || []"
+                    :key="item.chapa"
+                  >
+                    <tr v-if="!item.mudancas?.length" class="linha-sem-mudanca">
+                      <td>{{ item.chapa }}</td>
+                      <td>{{ item.nome || '—' }}</td>
+                      <td colspan="3" class="text-grey-7">
+                        Sem alteração de campo — só reconfirmado pela planilha.
+                      </td>
+                    </tr>
+                    <template v-else>
+                      <tr
+                        v-for="(mudanca, indice) in item.mudancas"
+                        :key="`${item.chapa}-${indice}`"
+                        :class="indice === 0 ? 'linha-inicio-grupo' : ''"
+                      >
+                        <td>{{ indice === 0 ? item.chapa : '' }}</td>
+                        <td>{{ indice === 0 ? item.nome || '—' : '' }}</td>
+                        <td class="text-weight-medium">{{ mudanca.campo }}</td>
+                        <td class="text-grey-7">{{ mudanca.de }}</td>
+                        <td class="text-positive text-weight-medium">{{ mudanca.para }}</td>
+                      </tr>
+                    </template>
+                  </template>
+                </tbody>
+
+                <tbody v-else-if="detalheImportacao === 'rateios'">
+                  <tr
+                    v-for="(item, indice) in resumoColaboradores?.detalhes_rateios || []"
+                    :key="indice"
+                  >
+                    <td>{{ item.chapa }}</td>
+                    <td>{{ item.nome || '—' }}</td>
+                    <td>{{ item.rateio }}</td>
+                    <td>{{ item.grpccusto }}</td>
+                  </tr>
+                </tbody>
+
+                <tbody v-else>
+                  <tr
+                    v-for="(item, indice) in resumoColaboradores?.erros || []"
+                    :key="indice"
+                  >
+                    <td>{{ item.linha }}</td>
+                    <td>{{ item.chapa || '—' }}</td>
+                    <td>{{ item.nome || '—' }}</td>
+                    <td>{{ item.secao || '—' }}</td>
+                    <td class="text-negative">{{ item.erro }}</td>
+                  </tr>
+                </tbody>
+              </q-markup-table>
+            </q-card-section>
           </q-card>
         </q-dialog>
       </q-page>
@@ -492,6 +638,9 @@ const {
 } = useSessao()
 
 const arquivoColaboradores = ref(null)
+const baixandoModeloColaboradores = ref(false)
+const dialogDetalheImportacao = ref(false)
+const detalheImportacao = ref('criados')
 const resumoColaboradores = ref(null)
 const analisandoColaboradores = ref(false)
 const aplicandoColaboradores = ref(false)
@@ -791,6 +940,87 @@ async function salvar() {
   }
 }
 
+const chipsImportacao = computed(() => {
+  const resumo = resumoColaboradores.value || {}
+
+  return [
+    {
+      tipo: 'criados',
+      cor: 'positive',
+      rotulo: 'novo(s)',
+      total: resumo.criados || 0
+    },
+    {
+      tipo: 'atualizados',
+      cor: 'primary',
+      rotulo: 'atualizado(s)',
+      total: resumo.atualizados || 0
+    },
+    {
+      tipo: 'rateios',
+      cor: 'grey-7',
+      rotulo: 'rateio(s) novo(s)',
+      total: resumo.rateios_novos || 0
+    },
+    {
+      tipo: 'erros',
+      cor: resumo.erros?.length ? 'negative' : 'grey-5',
+      rotulo: 'com erro',
+      total: resumo.erros?.length || 0
+    }
+  ]
+})
+
+const TITULOS_DETALHE_IMPORTACAO = {
+  criados: 'Colaboradores novos',
+  atualizados: 'Colaboradores atualizados (de → para)',
+  rateios: 'Rateios novos',
+  erros: 'Linhas com erro'
+}
+
+const tituloDetalheImportacao = computed(
+  () => TITULOS_DETALHE_IMPORTACAO[detalheImportacao.value] || 'Detalhes'
+)
+
+function abrirDetalheImportacao(tipo) {
+  const chip = chipsImportacao.value.find(item => item.tipo === tipo)
+
+  if (!chip?.total) {
+    return
+  }
+
+  detalheImportacao.value = tipo
+  dialogDetalheImportacao.value = true
+}
+
+async function baixarModeloColaboradores() {
+  limparAvisos()
+  baixandoModeloColaboradores.value = true
+
+  try {
+    const resposta = await fetch('/api/colaboradores/planilha/modelo')
+
+    if (!resposta.ok) {
+      const dados = await resposta.json().catch(() => ({}))
+      throw new Error(dados.erro || 'Erro ao gerar o modelo.')
+    }
+
+    const blob = await resposta.blob()
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'cadastro-colaboradores.xlsx'
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+  } catch (e) {
+    erro.value = e.message || 'Erro ao gerar o modelo.'
+  } finally {
+    baixandoModeloColaboradores.value = false
+  }
+}
+
 async function analisarPlanilhaColaboradores() {
   if (!arquivoColaboradores.value) {
     return
@@ -909,7 +1139,15 @@ onMounted(carregarTudo)
 <style scoped>
 .cartao-formulario {
   width: 100%;
-  max-width: 520px;
+  max-width: 440px;
+}
+
+/* o formulário é longo (dados + 4 vínculos); prende a altura na viewport pra
+   o cartão não passar da tela em monitor baixo — rola só o miolo, deixando
+   cabeçalho e botões sempre à vista */
+.corpo-formulario {
+  max-height: 68vh;
+  overflow-y: auto;
 }
 
 .tabela-niveis :deep(th) {
@@ -917,5 +1155,27 @@ onMounted(carregarTudo)
   letter-spacing: 0.04em;
   text-transform: uppercase;
   font-size: 0.72rem;
+}
+
+/* tabela do diálogo de detalhe da importação */
+.tabela-detalhe :deep(th) {
+  font-family: var(--fonte-ui);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-size: 0.7rem;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.tabela-detalhe :deep(td) {
+  font-size: 0.8rem;
+}
+
+/* no "de-para", cada colaborador ocupa várias linhas (uma por campo
+   alterado); a régua mais forte marca onde começa a próxima pessoa */
+.tabela-detalhe :deep(tr.linha-inicio-grupo:not(:first-child) td),
+.tabela-detalhe :deep(tr.linha-sem-mudanca:not(:first-child) td) {
+  border-top: 2px solid var(--linha-forte);
 }
 </style>

@@ -89,17 +89,22 @@
                 </q-select>
               </div>
 
-              <div class="col-12 col-md-2">
+              <div class="col-12 col-md-3">
                 <q-input
                   v-model="filtroEquipe"
                   outlined
                   dense
                   clearable
-                  placeholder="Pesquisar por prefixo ou base..."
+                  placeholder="Prefixo, base, nome ou chapa..."
                 >
                   <template #prepend>
                     <q-icon name="search" />
                   </template>
+                  <q-tooltip>
+                    Busca pelo prefixo e base da equipe e também pelo nome ou
+                    chapa de quem está alocado. Ao achar uma pessoa, a equipe
+                    dela já abre com a linha destacada.
+                  </q-tooltip>
                 </q-input>
               </div>
 
@@ -200,9 +205,17 @@
               <q-separator />
 
               <q-list separator>
+                <!--
+                  A chave leva o texto da busca junto de propósito: quando a
+                  busca muda, o item é recriado e o :default-opened volta a
+                  ser avaliado — é o que faz a equipe da pessoa encontrada
+                  abrir sozinha, sem tirar do usuário o direito de recolher
+                  depois na mão (o que um :model-value fixo impediria).
+                -->
                 <q-expansion-item
                   v-for="equipe in equipesFiltradas"
-                  :key="equipe.id"
+                  :key="`${equipe.id}-${textoBuscaEquipe}`"
+                  :default-opened="buscaCasaComPessoa(equipe)"
                   expand-separator
                   :label="equipe.prefixo || 'Equipe'"
                   :caption="equipe.base || ''"
@@ -264,6 +277,7 @@
                         v-for="vaga in equipe.vagas"
                         :key="vaga.id"
                         class="row items-center text-center q-py-sm"
+                        :class="{ 'linha-encontrada': vagaCasaComBusca(vaga) }"
                       >
                         <div class="col-12 col-sm-2 text-caption">
                           {{ vaga.colaborador?.chapa || '-' }}
@@ -709,7 +723,7 @@
     <!-- ================================================== -->
 
     <q-dialog v-model="dialogPlanilhaAlocacoes">
-      <q-card style="min-width: 600px; max-width: 95vw">
+      <q-card style="width: 480px; max-width: 92vw">
         <q-card-section class="row items-center">
           <div class="text-h6">Alocação em massa por planilha</div>
           <q-space />
@@ -721,11 +735,14 @@
         <q-card-section>
           <div class="q-mb-md">
             <q-btn
-              outline
+              unelevated
+              rounded
+              no-caps
               dense
-              color="primary"
+              color="positive"
               icon="download"
               label="Baixar planilha atual"
+              class="btn-exportar"
               @click="baixarPlanilhaAlocacoes"
             />
           </div>
@@ -831,6 +848,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 
 import CabecalhoApp from '../components/CabecalhoApp.vue'
 import MarcaDaguaFundo from '../components/MarcaDaguaFundo.vue'
+import { PODE_VER_EQUIPES } from '../composables/useSessao'
 import {
   CHAVE_BASES_SELECIONADAS,
   ehEquipeFolguista,
@@ -844,6 +862,8 @@ import {
   SETOR_TODOS,
   TIPO_TODOS
 } from '../utils/equipes'
+
+definePage({ meta: { permissao: PODE_VER_EQUIPES } })
 
 // ============================================================
 // ESTADO
@@ -1023,6 +1043,28 @@ const opcoesSetores = computed(() => opcoesSetorFiltro(equipes.value))
 // EQUIPES FILTRADAS
 // ============================================================
 
+const textoBuscaEquipe = computed(() =>
+  (filtroEquipe.value || '').trim().toLowerCase()
+)
+
+// A busca cobre a equipe (prefixo/base) E as pessoas dentro dela (nome/chapa),
+// para achar "onde fulano está alocado" sem abrir equipe por equipe.
+function vagaCasaComBusca(vaga) {
+  const texto = textoBuscaEquipe.value
+  if (!texto || !vaga?.colaborador) {
+    return false
+  }
+
+  const colaborador = vaga.colaborador
+  return `${colaborador.nome || ''} ${colaborador.chapa || ''}`
+    .toLowerCase()
+    .includes(texto)
+}
+
+function buscaCasaComPessoa(equipe) {
+  return (equipe.vagas || []).some(vagaCasaComBusca)
+}
+
 const equipesFiltradas = computed(() => {
   const visiveisPorBase =
     !baseSelecionada.value.length ||
@@ -1033,7 +1075,7 @@ const equipesFiltradas = computed(() => {
           return baseSelecionada.value.includes(base)
         })
 
-  const textoBusca = filtroEquipe.value.trim().toLowerCase()
+  const textoBusca = textoBuscaEquipe.value
 
   const equipesVisiveis = visiveisPorBase.filter(equipe => {
     if (
@@ -1044,8 +1086,8 @@ const equipesFiltradas = computed(() => {
     }
 
     if (textoBusca) {
-      const alvo = `${equipe.prefixo || ''} ${equipe.base || ''}`.toLowerCase()
-      if (!alvo.includes(textoBusca)) {
+      const alvoEquipe = `${equipe.prefixo || ''} ${equipe.base || ''}`.toLowerCase()
+      if (!alvoEquipe.includes(textoBusca) && !buscaCasaComPessoa(equipe)) {
         return false
       }
     }
@@ -1795,5 +1837,14 @@ watch(
   display: block;
   width: 100%;
   text-align: left !important;
+}
+
+/* linha da pessoa que a busca encontrou: a equipe pode ter 8+ vagas, então o
+   destaque é o que faz o olho cair direto em quem foi procurado */
+.linha-encontrada {
+  background: var(--realce);
+  border-left: 3px solid var(--marca);
+  border-radius: 4px;
+  font-weight: 600;
 }
 </style>

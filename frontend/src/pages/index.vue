@@ -36,19 +36,21 @@
 
         <q-card flat bordered class="q-mb-md barra-filtros">
           <q-card-section>
-            <div class="row items-center q-col-gutter-md">
-              <div class="col-12 col-md-4">
+            <div class="row q-col-gutter-md">
+              <div class="col-6 col-md-3">
                 <q-select
                   :model-value="baseSelecionada"
                   :options="opcoesBases"
                   label="Base"
                   outlined
                   dense
+                  rounded
                   clearable
                   multiple
                   use-chips
                   emit-value
                   map-options
+                  class="campo-filtro"
                   @update:model-value="atualizarSelecaoBases"
                 >
                   <template #prepend>
@@ -57,15 +59,17 @@
                 </q-select>
               </div>
 
-              <div class="col-12 col-md-3">
+              <div class="col-6 col-md-3">
                 <q-select
                   v-model="tipoSelecionado"
                   :options="opcoesTipos"
                   label="Tipo de equipe"
                   outlined
                   dense
+                  rounded
                   emit-value
                   map-options
+                  class="campo-filtro"
                   @update:model-value="carregarResumo"
                 >
                   <template #prepend>
@@ -74,15 +78,17 @@
                 </q-select>
               </div>
 
-              <div class="col-12 col-md-2">
+              <div class="col-6 col-md-3">
                 <q-select
                   v-model="setorSelecionado"
                   :options="opcoesSetores"
                   label="Setor"
                   outlined
                   dense
+                  rounded
                   emit-value
                   map-options
+                  class="campo-filtro"
                   @update:model-value="carregarResumo"
                 >
                   <template #prepend>
@@ -91,43 +97,62 @@
                 </q-select>
               </div>
 
-              <div class="col-auto">
-                <div class="row q-gutter-xs">
-                  <q-chip
-                    v-for="grupo in totalExibido.grupos"
-                    :key="grupo.rotulo"
-                    clickable
-                    class="chip-tipo"
-                    :class="{ ativo: tipoEstaFiltrado(grupo) }"
-                    :style="{
-                      background: corDoTipo(grupo),
-                      color: 'var(--tipo-tinta)'
-                    }"
-                    @click="alternarFiltroTipo(grupo)"
-                  >
-                    {{ grupo.equipes }} {{ rotuloCurto(grupo) }}
-                    <q-tooltip>
-                      {{
-                        tipoEstaFiltrado(grupo)
-                          ? 'Clique para remover o filtro'
-                          : `Filtrar por ${rotuloCurto(grupo)}`
-                      }}
-                    </q-tooltip>
-                  </q-chip>
-                </div>
+              <div class="col-6 col-md-3">
+                <q-select
+                  v-model="coordenadorSelecionado"
+                  :options="opcoesCoordenadores"
+                  label="Coordenador"
+                  outlined
+                  dense
+                  rounded
+                  emit-value
+                  map-options
+                  class="campo-filtro"
+                  @update:model-value="carregarResumo"
+                >
+                  <template #prepend>
+                    <q-icon name="badge" size="20px" />
+                  </template>
+                </q-select>
               </div>
+            </div>
+          </q-card-section>
 
-              <div class="col-auto">
-                <q-chip color="positive" text-color="white">
-                  {{ totalExibido.alocados }} alocados
-                </q-chip>
-              </div>
+          <q-separator />
 
-              <div class="col-auto">
-                <q-chip color="grey-7" text-color="white">
-                  {{ totalExibido.vagas }} vagas
-                </q-chip>
-              </div>
+          <q-card-section class="q-py-sm">
+            <div class="row q-gutter-xs items-center">
+              <q-chip
+                v-for="grupo in totalExibido.grupos"
+                :key="grupo.rotulo"
+                clickable
+                class="chip-tipo chip-topo-menor"
+                :class="{ ativo: tipoEstaFiltrado(grupo) }"
+                :style="{
+                  background: corDoTipo(grupo),
+                  color: 'var(--tipo-tinta)'
+                }"
+                @click="alternarFiltroTipo(grupo)"
+              >
+                {{ grupo.equipes }} {{ rotuloCurto(grupo) }}
+                <q-tooltip>
+                  {{
+                    tipoEstaFiltrado(grupo)
+                      ? 'Clique para remover o filtro'
+                      : `Filtrar por ${rotuloCurto(grupo)}`
+                  }}
+                </q-tooltip>
+              </q-chip>
+
+              <q-space />
+
+              <q-chip color="positive" text-color="white" class="chip-topo-menor">
+                {{ totalExibido.alocados }} alocados
+              </q-chip>
+
+              <q-chip color="grey-7" text-color="white" class="chip-topo-menor">
+                {{ totalExibido.vagas }} vagas
+              </q-chip>
             </div>
           </q-card-section>
         </q-card>
@@ -154,53 +179,49 @@
               Composição das equipes
             </div>
 
+            <div
+              v-if="!basesExibidas.length"
+              class="text-center text-grey-6 q-pa-md"
+            >
+              Nenhum dado para os filtros atuais.
+            </div>
+
             <q-card
               v-for="base in basesExibidas"
               :key="base.codigo"
               bordered
               class="q-mb-md"
-            >
+            > 
               <!-- =============================================== -->
               <!-- CABEÇALHO DA BASE -->
               <!-- =============================================== -->
 
               <q-card-section>
-                <div class="row items-center q-col-gutter-sm">
-                  <div class="col">
+                <div class="cabecalho-base">
+                  <div class="cabecalho-base-info">
                     <div class="text-h6">
                       {{ base.base }}
                     </div>
 
-                    <div class="text-caption">
+                    <div class="text-caption texto-sem-quebra">
                       {{ base.codigo }} · {{ base.equipes }} equipe(s)
                     </div>
                   </div>
 
-                  <div class="col-auto">
-                    <div class="row q-gutter-xs justify-end">
-                      <q-chip
-                        v-for="grupo in base.grupos"
-                        :key="grupo.rotulo"
-                        clickable
-                        size="sm"
-                        class="chip-tipo"
-                        :class="{ ativo: tipoEstaFiltrado(grupo) }"
-                        :style="{
-                          background: corDoTipo(grupo),
-                          color: 'var(--tipo-tinta)'
-                        }"
-                        @click="alternarFiltroTipo(grupo)"
-                      >
-                        {{ grupo.equipes }} {{ rotuloCurto(grupo) }}
-                        <q-tooltip>
-                          {{
-                            tipoEstaFiltrado(grupo)
-                              ? 'Clique para remover o filtro'
-                              : `Filtrar por ${rotuloCurto(grupo)}`
-                          }}
-                        </q-tooltip>
-                      </q-chip>
-                    </div>
+                  <div class="cabecalho-base-chips">
+                    <q-chip
+                      v-for="grupo in base.grupos"
+                      :key="grupo.rotulo"
+                      dense
+                      size="xs"
+                      class="chip-tipo-info"
+                      :style="{
+                        background: corDoTipo(grupo),
+                        color: 'var(--tipo-tinta)'
+                      }"
+                    >
+                      {{ grupo.equipes }} {{ rotuloCurto(grupo) }}
+                    </q-chip>
                   </div>
                 </div>
               </q-card-section>
@@ -212,11 +233,11 @@
               <!-- =============================================== -->
 
               <q-card-section class="q-pa-none">
-                <q-markup-table flat square class="tabela-resumo">
+                <q-markup-table flat square class="tabela-resumo tabela-base">
                   <thead>
                     <tr>
-                      <th class="text-left">Equipe</th>
-                      <th class="text-left">Função</th>
+                      <th class="text-left col-equipe">Equipe</th>
+                      <th class="text-left col-funcao">Função</th>
                       <th class="text-center">Vagas</th>
                       <th class="text-center">Alocados</th>
                       <th class="text-center">Diferença</th>
@@ -243,7 +264,7 @@
                           </span>
                         </td>
 
-                        <td class="text-left text-weight-medium">
+                        <td class="text-left text-weight-medium celula-funcao">
                           {{ linha.funcao }}
                         </td>
                         <td class="text-center">{{ linha.vagas }}</td>
@@ -251,7 +272,7 @@
                         <td class="text-center">
                           <span
                             class="marcador-diferenca"
-                            :class="linha.diferenca < 0 ? 'negativa' : 'neutra'"
+                            :class="classeDiferenca(linha.diferenca)"
                           >
                             {{ linha.diferenca }}
                           </span>
@@ -298,6 +319,7 @@
                     <q-table
                       flat
                       bordered
+                      no-data-label="Nenhum dado para os filtros atuais"
                       :rows="linhasDisponiveis"
                       :columns="colunasDisponiveis"
                       row-key="funcao"
@@ -360,6 +382,7 @@
                     <q-table
                       flat
                       bordered
+                      no-data-label="Nenhum dado para os filtros atuais"
                       :rows="linhasNaoAlocadas"
                       :columns="colunasNaoAlocadas"
                       row-key="funcao"
@@ -425,22 +448,33 @@
                 <!-- ========================================================= -->
 
                 <q-card bordered class="q-mb-md">
-                  <q-card-section>
-                    <div class="text-h6">Composição</div>
-                    <div class="text-caption">
-                      {{ basesExibidas.length }} base(s) ·
-                      {{ composicaoConsolidada.reduce((s, g) => s + g.equipes, 0) }} equipe(s)
+                  <q-card-section class="cabecalho-composicao">
+                    <div class="cabecalho-composicao-info">
+                      <div class="text-h6">Composição</div>
+                      <div class="text-caption">
+                        {{ basesExibidas.length }} base(s) ·
+                        {{ composicaoConsolidada.reduce((s, g) => s + g.equipes, 0) }} equipe(s)
+                      </div>
                     </div>
+
+                    <q-btn
+                      color="positive"
+                      icon="download"
+                      label="Exportar base total"
+                      dense
+                      :disable="!composicaoConsolidada.length"
+                      @click="abrirDetalhes('')"
+                    />
                   </q-card-section>
 
                   <q-separator />
 
                   <q-card-section class="q-pa-none">
-                    <q-markup-table flat square class="tabela-resumo">
+                    <q-markup-table flat square class="tabela-resumo tabela-consolidada">
                       <thead>
                         <tr>
-                          <th class="text-left">Equipe</th>
-                          <th class="text-left">Função</th>
+                          <th class="text-left col-equipe">Equipe</th>
+                          <th class="text-left col-funcao">Função</th>
                           <th class="text-center">Vagas</th>
                           <th class="text-center">Alocados</th>
                           <th class="text-center">Diferença</th>
@@ -466,7 +500,7 @@
                               </span>
                             </td>
 
-                            <td class="text-left text-weight-medium">
+                            <td class="text-left text-weight-medium celula-funcao">
                               {{ linha.funcao }}
                             </td>
                             <td class="text-center">{{ linha.vagas }}</td>
@@ -484,7 +518,7 @@
                             <td class="text-center">
                               <span
                                 class="marcador-diferenca"
-                                :class="linha.diferenca < 0 ? 'negativa' : 'neutra'"
+                                :class="classeDiferenca(linha.diferenca)"
                               >
                                 {{ linha.diferenca }}
                               </span>
@@ -492,6 +526,22 @@
                           </tr>
                         </template>
                       </tbody>
+
+                      <tfoot v-if="composicaoConsolidada.length">
+                        <tr class="linha-total-composicao">
+                          <td colspan="2" class="text-left">Total</td>
+                          <td class="text-center">{{ totalComposicaoConsolidada.vagas }}</td>
+                          <td class="text-center">{{ totalComposicaoConsolidada.alocados }}</td>
+                          <td class="text-center">
+                            <span
+                              class="marcador-diferenca"
+                              :class="classeDiferenca(totalComposicaoConsolidada.diferenca)"
+                            >
+                              {{ totalComposicaoConsolidada.diferenca }}
+                            </span>
+                          </td>
+                        </tr>
+                      </tfoot>
                     </q-markup-table>
                   </q-card-section>
                 </q-card>
@@ -696,6 +746,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 
 import CabecalhoApp from '../components/CabecalhoApp.vue'
 import MarcaDaguaFundo from '../components/MarcaDaguaFundo.vue'
+import { PODE_VER_RESUMO } from '../composables/useSessao'
 import {
   CHAVE_BASES_SELECIONADAS,
   FUNCOES_SISTEMA,
@@ -705,7 +756,7 @@ import {
 } from '../utils/equipes'
 
 // mantem /resumo valendo como atalho para a tela principal
-definePage({ alias: '/resumo' })
+definePage({ alias: '/resumo', meta: { permissao: PODE_VER_RESUMO } })
 
 // ============================================================
 // ESTADO
@@ -720,6 +771,8 @@ const tipoSelecionado = ref('')
 const tiposFiltro = ref([])
 const setorSelecionado = ref('')
 const setoresFiltro = ref([])
+const coordenadorSelecionado = ref('')
+const coordenadoresFiltro = ref([])
 
 const visaoIndicadores = ref('tabela')
 
@@ -768,6 +821,14 @@ const opcoesTipos = computed(() => [
 const opcoesSetores = computed(() => [
   { label: 'Todos os setores', value: '' },
   ...setoresFiltro.value.map(setor => ({ label: setor, value: setor }))
+])
+
+const opcoesCoordenadores = computed(() => [
+  { label: 'Todos os coordenadores', value: '' },
+  ...coordenadoresFiltro.value.map(coordenador => ({
+    label: coordenador,
+    value: coordenador
+  }))
 ])
 
 const opcoesBases = computed(() => {
@@ -887,6 +948,22 @@ const composicaoConsolidada = computed(() => {
     })
 })
 
+// soma Vagas/Alocados/Diferença de todas as linhas da tabela Composição,
+// para a linha de total no rodapé
+const totalComposicaoConsolidada = computed(() =>
+  composicaoConsolidada.value.reduce(
+    (total, grupo) => {
+      for (const linha of grupo.funcoes) {
+        total.vagas += linha.vagas || 0
+        total.alocados += linha.alocados || 0
+        total.diferenca += linha.diferenca || 0
+      }
+      return total
+    },
+    { vagas: 0, alocados: 0, diferenca: 0 }
+  )
+)
+
 // a cor identifica a disciplina de forma consistente entre chips e cards
 // construcao e folguista sao os dois conceitos fixos do sistema e tem cor
 // propria; as demais disciplinas saem da paleta abaixo
@@ -946,6 +1023,16 @@ function tipoEstaFiltrado(grupo) {
 function rotuloCurto(grupo) {
   // nome de tipo de equipe sempre em caixa alta
   return grupo.rotulo.toUpperCase()
+}
+
+// diferenca = alocados - vagas. negativa = falta gente, positiva = sobrou
+// gente (o card "Total geral" ja trata superavit como estado proprio —
+// aqui essas tabelas por funcao/equipe tambem precisam diferenciar, em vez
+// de tratar "sobrou" igual a "bateu certinho")
+function classeDiferenca(diferenca) {
+  if (diferenca < 0) return 'negativa'
+  if (diferenca > 0) return 'positiva'
+  return 'neutra'
 }
 
 const colunasDisponiveis = computed(() => {
@@ -1244,15 +1331,23 @@ const detalhesExibidos = computed(() => {
         !detalheSelecionado.value.codigo ||
         base.codigo === detalheSelecionado.value.codigo
     )
-    .flatMap(base => base.detalhes?.[detalheSelecionado.value.funcao] || [])
+    .flatMap(base =>
+      // funcao vazia = exportar a base toda: junta todas as funcoes, nao
+      // so uma
+      detalheSelecionado.value.funcao
+        ? base.detalhes?.[detalheSelecionado.value.funcao] || []
+        : Object.values(base.detalhes || {}).flat()
+    )
 })
 
 const detalheTitulo = computed(() => {
+  const funcao = detalheSelecionado.value.funcao || 'Todas as funções'
+
   if (detalheSelecionado.value.codigo) {
-    return `${detalheSelecionado.value.funcao} em ${detalheSelecionado.value.codigo}`
+    return `${funcao} em ${detalheSelecionado.value.codigo}`
   }
 
-  return `${detalheSelecionado.value.funcao} em todas as bases`
+  return `${funcao} em todas as bases`
 })
 
 function abrirDetalhes(funcao, codigo = '') {
@@ -1337,8 +1432,12 @@ function exportarAlocados() {
   const url = URL.createObjectURL(arquivo)
   const link = document.createElement('a')
 
+  const nomeFuncao = detalheSelecionado.value.funcao
+    ? detalheSelecionado.value.funcao.toLowerCase()
+    : 'todas-as-funcoes'
+
   link.href = url
-  link.download = `pessoas-alocadas-${detalheSelecionado.value.funcao.toLowerCase()}.csv`
+  link.download = `pessoas-alocadas-${nomeFuncao}.csv`
   link.click()
   URL.revokeObjectURL(url)
 }
@@ -1377,7 +1476,14 @@ function exportarNaoAlocados() {
 // CARREGAR RESUMO
 // ============================================================
 
+// trocar o filtro rapido dispara varias chamadas em paralelo; sem isso, a
+// que responder por ultimo vence, nao a mais recente clicada — o contador
+// garante que so a resposta da ULTIMA chamada disparada grava na tela.
+let sequenciaResumo = 0
+
 async function carregarResumo() {
+  const minhaSequencia = ++sequenciaResumo
+
   carregando.value = true
 
   erro.value = ''
@@ -1389,6 +1495,9 @@ async function carregarResumo() {
     }
     if (setorSelecionado.value) {
       parametros.set('setor', setorSelecionado.value)
+    }
+    if (coordenadorSelecionado.value) {
+      parametros.set('coordenador', coordenadorSelecionado.value)
     }
 
     const resposta = await fetch(`/api/resumo?${parametros}`)
@@ -1403,11 +1512,18 @@ async function carregarResumo() {
       throw new Error(dados.erro)
     }
 
+    if (minhaSequencia !== sequenciaResumo) {
+      // uma chamada mais recente ja foi disparada — esta resposta esta
+      // desatualizada, ignora para nao sobrescrever o filtro atual
+      return
+    }
+
     bases.value = dados.bases || []
 
     basesFiltro.value = dados.bases_filtro || []
     tiposFiltro.value = dados.tipos_filtro || []
     setoresFiltro.value = dados.setores_filtro || []
+    coordenadoresFiltro.value = dados.coordenadores_filtro || []
 
     pessoasDisponiveis.value = dados.pessoas_disponiveis || []
 
@@ -1415,9 +1531,13 @@ async function carregarResumo() {
   } catch (e) {
     console.error(e)
 
-    erro.value = e.message || 'Erro ao carregar resumo.'
+    if (minhaSequencia === sequenciaResumo) {
+      erro.value = e.message || 'Erro ao carregar resumo.'
+    }
   } finally {
-    carregando.value = false
+    if (minhaSequencia === sequenciaResumo) {
+      carregando.value = false
+    }
   }
 }
 
@@ -1472,6 +1592,81 @@ watch(
 </script>
 
 <style scoped>
+/* nunca deixa "BCB · 37 equipe(s)" quebrar palavra por palavra quando a
+   coluna aperta — corta com reticencias em vez de virar 3 linhas soltas */
+.texto-sem-quebra {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* cabecalho do card de base: flexbox puro reagindo ao espaco real do
+   card, nao ao tamanho da tela — usar breakpoint de tela (col-sm) aqui
+   colidia de novo, porque este card vive numa coluna de 60% da largura
+   da pagina (ver .resumo-composicao), entao uma tela larga nao garante
+   card largo. min-width:0 deixa o titulo encolher e cortar com
+   reticencias em vez de espremer os chips por cima do texto. */
+.cabecalho-base {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.cabecalho-base-info {
+  flex: 1 1 140px;
+  min-width: 0;
+}
+
+/* mesma logica do .cabecalho-base: flex-wrap reagindo ao espaco real do
+   card (nao ao breakpoint de tela), titulo encolhe antes do botao */
+.cabecalho-composicao {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.cabecalho-composicao-info {
+  flex: 1 1 160px;
+  min-width: 0;
+}
+
+/* grid-auto-flow:column preenche coluna a coluna, entao com 2 linhas
+   fixas o numero de colunas cresce sozinho conforme sobram chips —
+   nunca passa de 2 linhas, independente de quantas disciplinas a base
+   tiver. Largura de coluna fixa deixa todos os chips do mesmo tamanho. */
+.cabecalho-base-chips {
+  flex: 0 0 auto;
+  max-width: 100%;
+  display: grid;
+  grid-auto-flow: column;
+  grid-template-rows: repeat(2, auto);
+  grid-auto-columns: 92px;
+  gap: 4px;
+}
+
+.cabecalho-base-chips :deep(.q-chip) {
+  margin: 0;
+  width: 100%;
+  justify-content: center;
+}
+
+.cabecalho-base-chips :deep(.q-chip__content) {
+  justify-content: center;
+  width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* chips da barra de filtro (topo da tabela): tipo, alocados e vagas.
+   Partiu de 90% (10% menores que o padrao do Quasar) e o Igor pediu +5%
+   depois de ver na tela: 90 x 1,05 = 94,5%. */
+.chip-topo-menor {
+  font-size: 94.5%;
+}
+
 /* chip de tipo: e um filtro, entao precisa parecer clicavel e mostrar
    claramente qual esta ativo */
 .chip-tipo {
@@ -1498,36 +1693,178 @@ watch(
   }
 }
 
+/* chip do cabecalho do card de base: so mostra a contagem por disciplina,
+   nao e filtro (o filtro fica so na barra do topo) — menor e sem cursor
+   de clique */
+.chip-tipo-info {
+  cursor: default;
+  font-size: 0.68rem;
+  height: 20px;
+}
+
 /* celula de grupo mesclada: uma vez por disciplina, abrangendo suas funcoes */
+/* a largura vem das variaveis --largura-equipe-* (uma por tabela) */
 .celula-grupo {
   vertical-align: middle;
   text-align: center;
   border-left: 4px solid var(--cor-grupo, var(--marca));
   background: var(--superficie-2);
   white-space: nowrap;
-  width: 1%;
 }
 
+/* O tamanho destes dois textos define a altura MINIMA da celula mesclada,
+   e e ela que estica a linha das equipes com uma funcao so (a celula
+   inteira precisa caber em 1 linha, enquanto numa equipe de 4 funcoes a
+   mesma altura se divide por 4). Por isso sao compactos.
+   O font-size fica nas regras por tabela, mais abaixo. */
 .grupo-rotulo {
   display: block;
   font-family: var(--fonte-ui);
   font-weight: 700;
-  font-size: 1.1rem;
+  line-height: 1;
   /* mais espaçada para a cor da disciplina ocupar mais area visivel */
-  letter-spacing: 0.14em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--cor-grupo, var(--marca));
 }
 
 .grupo-detalhe {
   display: block;
-  font-size: 0.72rem;
+  line-height: 1;
   color: var(--tinta-fraca);
 }
 
-/* separa visualmente um grupo do anterior */
+/* ============================================================
+   ALTURA DAS LINHAS DAS TABELAS — MEXA SO AQUI
+   ============================================================
+   Estes 4 valores valem para TODAS as tabelas do Resumo ao mesmo
+   tempo (composicao por base, composicao consolidada, pessoas
+   alocadas e pessoas nao alocadas), entao elas nunca saem do
+   padrao uma da outra.
+
+   --linha-altura  : espaco vertical entre as linhas. E o principal.
+                     Menor = linhas mais juntas. (1.1 = atual)
+   --linha-padding : folga vertical extra dentro da celula.
+   --linha-fonte   : tamanho do texto das celulas. Este valor vale para as
+                     tabelas de pessoas alocadas/nao alocadas; as duas de
+                     composicao tem os seus proprios, logo abaixo.
+   --cabecalho-*   : so o cabecalho vermelho, independente do corpo.
+   --grupo-*       : os dois textos da celula mesclada da esquerda (nome
+                     da disciplina e "6 equipe(s) · 36 vaga(s)"). Sao eles
+                     que esticam a linha das equipes de uma funcao so —
+                     aumentar aqui volta a descompassar as alturas.
+*/
+.resumo-page {
+  --linha-altura: 2.2;
+  --linha-padding: 2.5px;
+  --linha-fonte: 0.85rem;
+  --cabecalho-altura: 1.2;
+  --cabecalho-padding: 4px;
+
+  /* Texto das colunas (Funcao, Vagas, Alocados, Diferenca) e do
+     cabecalho de cada tabela de composicao, separado porque as duas tem
+     larguras totais diferentes.
+     -base        = card de cada base
+     -consolidada = tabela Composicao */
+  --linha-fonte-base: 0.85rem;
+  --linha-fonte-consolidada: 0.7rem;
+
+  /* Texto da celula Equipe, separado pelo mesmo motivo */
+  --grupo-rotulo-base: 1.2rem;
+  --grupo-detalhe-base: 0.55rem;
+  --grupo-rotulo-consolidada: 1.0rem;
+  --grupo-detalhe-consolidada: 0.55rem;
+
+  /* Largura das colunas Equipe e Funcao. Separadas por tabela de
+     proposito: a composicao por base ocupa a largura cheia da pagina e a
+     consolidada vive numa coluna mais estreita, entao o mesmo valor nao
+     serve para as duas.
+     Cuidado ao reduzir a de Funcao: se ficar menor que "AUXILIAR DE
+     ELETRICISTA", o texto quebra em duas linhas e a linha cresce. */
+  --largura-equipe-base: 190px;
+  --largura-funcao-base: 150px;
+  --largura-equipe-consolidada: 170px;
+  --largura-funcao-consolidada: 140px;
+}
+
+/* cada tabela de composicao redefine --linha-fonte para si mesma, entao
+   as regras de th/td mais abaixo (que leem essa variavel) ja pegam o
+   valor certo sem precisar de uma regra de font-size por tabela */
+.tabela-base {
+  --linha-fonte: var(--linha-fonte-base);
+}
+
+.tabela-consolidada {
+  --linha-fonte: var(--linha-fonte-consolidada);
+}
+
+.tabela-base :deep(.grupo-rotulo) {
+  font-size: var(--grupo-rotulo-base);
+}
+
+.tabela-base :deep(.grupo-detalhe) {
+  font-size: var(--grupo-detalhe-base);
+}
+
+.tabela-consolidada :deep(.grupo-rotulo) {
+  font-size: var(--grupo-rotulo-consolidada);
+}
+
+.tabela-consolidada :deep(.grupo-detalhe) {
+  font-size: var(--grupo-detalhe-consolidada);
+}
+
+.tabela-base :deep(.col-equipe),
+.tabela-base :deep(.celula-grupo) {
+  width: var(--largura-equipe-base);
+}
+
+.tabela-base :deep(.col-funcao),
+.tabela-base :deep(.celula-funcao) {
+  width: var(--largura-funcao-base);
+}
+
+.tabela-consolidada :deep(.col-equipe),
+.tabela-consolidada :deep(.celula-grupo) {
+  width: var(--largura-equipe-consolidada);
+}
+
+.tabela-consolidada :deep(.col-funcao),
+.tabela-consolidada :deep(.celula-funcao) {
+  width: var(--largura-funcao-consolidada);
+}
+
+/* o Quasar fixa altura na propria <tr> (nao so padding da celula) —
+   sem isso, baixar o padding sozinho nao encolhe a linha de verdade */
+.tabela-resumo :deep(tr) {
+  height: auto;
+}
+
+/* cabecalho: padrao normal, igual nas duas tabelas (ver
+   .resumo-page .q-table th, mais abaixo) */
+.tabela-resumo :deep(th) {
+  padding: var(--cabecalho-padding) 10px;
+  line-height: var(--cabecalho-altura);
+  font-size: var(--linha-fonte);
+}
+
+/* corpo: o Quasar fixa height:48px na <td> do tbody — e ISSO, nao o
+   padding, que segurava a altura das linhas dentro do card */
+.tabela-resumo :deep(tbody td) {
+  height: auto;
+  padding: var(--linha-padding) 10px;
+  line-height: var(--linha-altura);
+  font-size: var(--linha-fonte);
+}
+
 .tabela-resumo :deep(tr.inicio-grupo td) {
   border-top: 1px solid var(--linha-forte);
+}
+
+.tabela-resumo :deep(tr.linha-total-composicao td) {
+  border-top: 2px solid var(--linha-forte);
+  background: var(--superficie-2);
+  font-weight: 700;
 }
 
 .tabela-resumo :deep(tbody tr:hover) {
@@ -1551,6 +1888,11 @@ watch(
   background: var(--negativo-fundo);
 }
 
+.marcador-diferenca.positiva {
+  color: var(--positivo);
+  background: var(--positivo-fundo);
+}
+
 .marcador-diferenca.neutra {
   color: var(--tinta-fraca);
   background: var(--realce);
@@ -1558,7 +1900,7 @@ watch(
 
 .resumo-page :deep(.q-table thead tr),
 .resumo-page :deep(.q-table thead th) {
-  background: #711424 !important;
+  background: var(--marca) !important;
   color: #fff !important;
   font-weight: 700;
   text-align: center !important;
@@ -1572,16 +1914,37 @@ watch(
   padding: 12px;
 }
 
-.resumo-page :deep(.q-table th),
-.resumo-page :deep(.q-table td) {
-  padding: 3px 4px;
-  line-height: 1.09;
+/* mesmo padrao da .tabela-resumo (composicao por base e consolidada),
+   acima: cabecalho normal, corpo apertado */
+.resumo-page :deep(.q-table th) {
+  padding: var(--cabecalho-padding) 10px;
+  line-height: var(--cabecalho-altura);
+  font-size: var(--linha-fonte);
+}
+
+.resumo-page :deep(.q-table tbody td) {
+  height: auto;
+  padding: var(--linha-padding) 10px;
+  line-height: var(--linha-altura);
+  font-size: var(--linha-fonte);
+}
+
+/* nesta tabela o nome da funcao e um q-btn, que tem altura minima
+   propria e ignora o padding da celula */
+.resumo-page :deep(.q-table .q-btn) {
+  min-height: 0;
+  padding: 0 4px;
+  font-size: var(--linha-fonte);
+}
+
+.resumo-page :deep(.q-table .q-btn__content) {
+  line-height: var(--linha-altura);
 }
 
 .resumo-lateral :deep(.q-table th),
 .resumo-lateral :deep(.q-table td) {
   padding: 2px 3px !important;
-  line-height: 1.05 !important;
+  line-height: 1.10 !important;
 }
 
 /* Total geral: cards mais compactos, sem perder legibilidade */
@@ -1648,7 +2011,7 @@ watch(
 .tabela-equipe :deep(.q-table th),
 .tabela-equipe :deep(.q-table td) {
   padding: 3px 5px;
-  line-height: 1.15;
+  line-height: 1.10;
 }
 
 .detalhes-disponiveis {

@@ -376,13 +376,20 @@ def tem_permissao(permissao, usuario=None):
 def pode_atuar_na_base_e_tipo(usuario, base, tipo_equipe, setor=None, equipe_id=None):
     """Diz se o usuario pode alocar/remover numa vaga daquela base e tipo.
 
-    ADMINISTRADOR (ignora_vinculos) sempre pode. Os demais precisam ter um vinculo
-    BASE que bata com a base da vaga E um vinculo TIPO_EQUIPE que bata com o
-    tipo dela — as duas coisas ao mesmo tempo, nao uma ou outra.
+    ADMINISTRADOR (ignora_vinculos) sempre pode.
 
-    SETOR e EQUIPE (uma equipe especifica) sao filtros a mais, só aplicados
-    quando o usuario tem aquele vinculo cadastrado: quem nao usa SETOR/EQUIPE
-    continua funcionando so com BASE+TIPO_EQUIPE, como antes.
+    Para os demais, CADA tipo de vinculo (BASE, TIPO_EQUIPE, SETOR, EQUIPE) e
+    um filtro que so entra em jogo quando o usuario TEM aquele vinculo
+    cadastrado. Um vinculo ausente nao restringe aquela dimensao: quem tem so
+    SETOR=GSTC enxerga todas as equipes de GSTC, em qualquer base e qualquer
+    disciplina; quem tem BASE=BACABAL + TIPO_EQUIPE=CONSTRUÇÃO enxerga so a
+    construcao de Bacabal. Os filtros presentes valem todos ao mesmo tempo.
+
+    Antes BASE e TIPO_EQUIPE eram obrigatorios, entao um usuario vinculado so
+    a um SETOR caia no "base not in bases" (conjunto vazio) e nao via NADA.
+
+    Sem nenhum vinculo o usuario nao ve nada — a regra falha fechada, para uma
+    conta sem escopo nunca virar um curinga que enxerga a operacao inteira.
     """
     if not usuario:
         return False
@@ -392,15 +399,21 @@ def pode_atuar_na_base_e_tipo(usuario, base, tipo_equipe, setor=None, equipe_id=
     vinculos = usuario.get("vinculos") or {}
     bases = set(vinculos.get(VINCULO_BASE, []))
     tipos = set(vinculos.get(VINCULO_TIPO_EQUIPE, []))
+    setores = set(vinculos.get(VINCULO_SETOR, []))
+    equipes = set(vinculos.get(VINCULO_EQUIPE, []))
 
-    if base not in bases or tipo_equipe not in tipos:
+    if not (bases or tipos or setores or equipes):
         return False
 
-    setores = set(vinculos.get(VINCULO_SETOR, []))
+    if bases and base not in bases:
+        return False
+
+    if tipos and tipo_equipe not in tipos:
+        return False
+
     if setores and setor not in setores:
         return False
 
-    equipes = set(vinculos.get(VINCULO_EQUIPE, []))
     if equipes and (equipe_id is None or str(equipe_id) not in equipes):
         return False
 

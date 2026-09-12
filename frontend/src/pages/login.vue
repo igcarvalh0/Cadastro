@@ -330,6 +330,11 @@ const canvasFundoEl = ref(null)
 let contextoFundo = null
 let quadroAnimacao = null
 let tempoFundo = 0
+let animandoFundo = false
+
+function preferoMenosAnimacaoFundo() {
+  return window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
+}
 
 const ladrilhos = [
   { x: -1, y: -1, cor: '#8E1834' },
@@ -468,6 +473,8 @@ function desenharRede(ctx, largura, altura) {
 }
 
 function animarFundo() {
+  if (!animandoFundo) return
+
   const canvas = canvasFundoEl.value
   if (!canvas || !contextoFundo) return
 
@@ -507,6 +514,27 @@ function animarFundo() {
   quadroAnimacao = requestAnimationFrame(animarFundo)
 }
 
+function iniciarFundo() {
+  if (animandoFundo || preferoMenosAnimacaoFundo()) return
+
+  animandoFundo = true
+  quadroAnimacao = requestAnimationFrame(animarFundo)
+}
+
+function pararFundo() {
+  animandoFundo = false
+
+  if (quadroAnimacao) {
+    cancelAnimationFrame(quadroAnimacao)
+    quadroAnimacao = null
+  }
+}
+
+function aoTrocarVisibilidadeFundo() {
+  if (document.hidden) pararFundo()
+  else iniciarFundo()
+}
+
 function redimensionarCanvas() {
   const canvas = canvasFundoEl.value
   if (!canvas) return
@@ -526,14 +554,20 @@ onMounted(async () => {
   if (canvasFundoEl.value) {
     contextoFundo = canvasFundoEl.value.getContext('2d')
     redimensionarCanvas()
+    // desenha um quadro logo de cara: quem pediu menos animação fica com o
+    // fundo parado, em vez de ficar sem fundo nenhum
+    contextoFundo.clearRect(0, 0, canvasFundoEl.value.width, canvasFundoEl.value.height)
+    desenharRede(contextoFundo, canvasFundoEl.value.width, canvasFundoEl.value.height)
     window.addEventListener('resize', redimensionarCanvas)
-    quadroAnimacao = requestAnimationFrame(animarFundo)
+    document.addEventListener('visibilitychange', aoTrocarVisibilidadeFundo)
+    iniciarFundo()
   }
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('resize', redimensionarCanvas)
-  if (quadroAnimacao) cancelAnimationFrame(quadroAnimacao)
+  document.removeEventListener('visibilitychange', aoTrocarVisibilidadeFundo)
+  pararFundo()
 })
 </script>
 

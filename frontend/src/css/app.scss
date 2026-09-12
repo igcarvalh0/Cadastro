@@ -331,10 +331,55 @@ body {
 }
 
 .q-btn {
-  border-radius: 6px;
+  border-radius: 10px;
   font-family: var(--fonte-ui);
   font-weight: 600;
   letter-spacing: 0.03em;
+  transition: transform 0.14s ease, box-shadow 0.14s ease, filter 0.14s ease;
+}
+
+// botoes "solidos" (unelevated/padrao, nao flat nem outline) ganham uma
+// sombra suave na cor do proprio texto/fundo e se levantam de leve ao
+// passar o mouse — a mesma linguagem do .btn-exportar, agora em todo o
+// app. Os segmentos de um q-btn-toggle ficam de fora: ali o efeito de
+// "grupo" quebraria com botoes individuais subindo.
+.q-btn:not(.q-btn--flat):not(.q-btn--outline):not(.q-btn-toggle .q-btn) {
+  box-shadow: 0 3px 10px rgba(45, 37, 39, 0.14);
+}
+
+.q-btn:not(.q-btn--flat):not(.q-btn--outline):not(.q-btn-toggle .q-btn):not(.q-btn--round):hover {
+  transform: translateY(-1px);
+  filter: brightness(1.03);
+  box-shadow: 0 6px 16px rgba(45, 37, 39, 0.2);
+}
+
+.q-btn:not(.q-btn--flat):not(.q-btn--outline):not(.q-btn-toggle .q-btn):active {
+  transform: translateY(0);
+  filter: brightness(0.97);
+}
+
+.q-btn--flat:hover,
+.q-btn--outline:hover {
+  filter: brightness(1.06);
+}
+
+body.body--dark .q-btn:not(.q-btn--flat):not(.q-btn--outline):not(.q-btn-toggle .q-btn) {
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.3);
+}
+
+body.body--dark .q-btn:not(.q-btn--flat):not(.q-btn--outline):not(.q-btn-toggle .q-btn):not(.q-btn--round):hover {
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .q-btn {
+    transition: none;
+  }
+
+  .q-btn:hover,
+  .q-btn:active {
+    transform: none;
+  }
 }
 
 // ============================================================
@@ -508,4 +553,60 @@ body.body--dark .filtros-campos .q-field--outlined.q-field--focused .q-field__co
 
 body.body--dark .text-primary {
   color: var(--tipo-construcao) !important;
+}
+
+// botao de exportar Excel/CSV/planilha: mesmo visual em toda a tela
+// (Resumo, Banco de dados, Cadastro de vagas) — pill em gradiente, com
+// sombra na cor do proprio botao (em vez de cinza generico) e um leve
+// realce ao passar o mouse. Usa !important pontual pra vencer as cores
+// solidas que o Quasar aplica via color="positive" inline.
+.btn-exportar {
+  position: relative;
+  overflow: hidden;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  background: linear-gradient(135deg, #1b6b45 0%, #1f8054 100%) !important;
+  box-shadow: 0 4px 14px rgba(27, 107, 69, 0.32);
+  transition: transform 0.16s ease, box-shadow 0.16s ease, filter 0.16s ease;
+}
+
+// filete de brilho no topo — reforca o efeito "pill" sem pesar
+.btn-exportar::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.22) 0%, rgba(255, 255, 255, 0) 55%);
+  pointer-events: none;
+}
+
+.btn-exportar:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(27, 107, 69, 0.4);
+  filter: brightness(1.04);
+}
+
+.btn-exportar:active {
+  transform: translateY(0);
+  box-shadow: 0 3px 10px rgba(27, 107, 69, 0.3);
+}
+
+body.body--dark .btn-exportar {
+  background: linear-gradient(135deg, #1e3329 0%, #227c52 100%) !important;
+  box-shadow: 0 4px 14px rgba(108, 199, 154, 0.22);
+}
+
+body.body--dark .btn-exportar:hover {
+  box-shadow: 0 8px 20px rgba(108, 199, 154, 0.3);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btn-exportar {
+    transition: none;
+  }
+
+  .btn-exportar:hover,
+  .btn-exportar:active {
+    transform: none;
+  }
 }

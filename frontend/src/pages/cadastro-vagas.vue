@@ -38,16 +38,24 @@
         <!-- FORMULÁRIOS -->
         <!-- ================================================== -->
 
-        <div class="row q-col-gutter-md q-mb-md">
-          <div class="col-12 col-md-6">
-            <q-card bordered>
-              <q-card-section class="text-center">
-                <div class="text-h6"> Nova equipe </div>
+        <!--
+          As 3 cards (Nova equipe / Planilha em massa / Nova vaga) formam um
+          bloco de 2 alturas iguais: a soma das duas da esquerda tem que bater
+          com a única da direita. Isso não sai só de padding — o .row vira um
+          flex que estica as duas colunas pra mesma altura (align-items
+          padrão = stretch), a coluna esquerda vira flex-column, e a segunda
+          card de lá (.card-planilha) ganha flex:1 pra absorver a diferença.
+        -->
+        <div class="row q-col-gutter-md q-mb-md coluna-formularios">
+          <div class="col-12 col-md-6 column q-gutter-md coluna-esquerda-formularios">
+            <q-card bordered dense>
+              <q-card-section class="text-center q-py-sm">
+                <div class="text-subtitle1 text-weight-bold"> Nova equipe </div>
               </q-card-section>
 
               <q-separator />
 
-              <q-card-section class="q-gutter-md">
+              <q-card-section class="q-gutter-sm q-pa-sm">
                 <q-select
                   v-model="novaEquipeBase"
                   outlined
@@ -72,6 +80,7 @@
                 />
 
                 <q-btn
+                  dense
                   color="primary"
                   icon="group_add"
                   label="Criar equipe"
@@ -81,17 +90,78 @@
                 />
               </q-card-section>
             </q-card>
-          </div>
 
-          <div class="col-12 col-md-6">
-            <q-card bordered>
-              <q-card-section class="text-center">
-                <div class="text-h6"> Nova vaga </div>
+            <!-- ================================================== -->
+            <!-- PLANILHA EM MASSA -->
+            <!-- ================================================== -->
+
+            <q-card bordered dense class="card-planilha column col">
+              <q-card-section class="text-center q-py-sm">
+                <div class="text-subtitle1 text-weight-bold"> Cadastro em massa por planilha </div>
               </q-card-section>
 
               <q-separator />
 
-              <q-card-section class="q-gutter-md">
+              <q-card-section class="q-gutter-sm q-pa-sm col justify-center">
+                <q-btn
+                  dense
+                  unelevated
+                  rounded
+                  no-caps
+                  color="positive"
+                  icon="download"
+                  label="Baixar planilha"
+                  :loading="baixandoPlanilha"
+                  class="full-width btn-exportar"
+                  @click="baixarPlanilha"
+                />
+                <div class="text-caption text-grey-7">
+                  Traz as equipes de hoje, uma por linha, com a quantidade de
+                  cada função.
+                </div>
+
+                <q-file
+                  v-model="arquivoPlanilha"
+                  outlined
+                  dense
+                  clearable
+                  accept=".xlsx"
+                  label="Planilha preenchida (.xlsx)"
+                >
+                  <template #prepend>
+                    <q-icon name="attach_file" />
+                  </template>
+                </q-file>
+
+                <div class="text-caption text-grey-7">
+                  Preencha a coluna AÇÃO com <strong>criar</strong>,
+                  <strong>editar</strong> ou <strong>excluir</strong>. Linha sem
+                  ação é ignorada.
+                </div>
+
+                <q-btn
+                  dense
+                  color="primary"
+                  icon="fact_check"
+                  label="Conferir mudanças"
+                  class="full-width"
+                  :disable="!arquivoPlanilha"
+                  :loading="analisandoPlanilha"
+                  @click="analisarPlanilha"
+                />
+              </q-card-section>
+            </q-card>
+          </div>
+
+          <div class="col-12 col-md-6">
+            <q-card bordered dense class="full-height">
+              <q-card-section class="text-center q-py-sm">
+                <div class="text-subtitle1 text-weight-bold"> Nova vaga </div>
+              </q-card-section>
+
+              <q-separator />
+
+              <q-card-section class="q-gutter-sm q-pa-sm">
                 <q-select
                   v-model="vagaEquipe"
                   outlined
@@ -158,6 +228,7 @@
                 />
 
                 <q-btn
+                  dense
                   color="primary"
                   icon="add"
                   label="Adicionar vaga"
@@ -169,70 +240,6 @@
             </q-card>
           </div>
         </div>
-
-        <!-- ================================================== -->
-        <!-- PLANILHA EM MASSA -->
-        <!-- ================================================== -->
-
-        <q-card bordered class="q-mb-md">
-          <q-card-section class="text-center">
-            <div class="text-h6"> Cadastro em massa por planilha </div>
-          </q-card-section>
-
-          <q-separator />
-
-          <q-card-section>
-            <div class="row q-col-gutter-md items-start">
-              <div class="col-12 col-md-4">
-                <q-btn
-                  outline
-                  color="primary"
-                  icon="download"
-                  label="Baixar planilha"
-                  :loading="baixandoPlanilha"
-                  class="full-width"
-                  @click="baixarPlanilha"
-                />
-                <div class="text-caption text-grey-7 q-mt-sm">
-                  Traz as equipes de hoje, uma por linha, com a quantidade de
-                  cada função.
-                </div>
-              </div>
-
-              <div class="col-12 col-md">
-                <q-file
-                  v-model="arquivoPlanilha"
-                  outlined
-                  dense
-                  clearable
-                  accept=".xlsx"
-                  label="Planilha preenchida (.xlsx)"
-                >
-                  <template #prepend>
-                    <q-icon name="attach_file" />
-                  </template>
-                </q-file>
-
-                <div class="text-caption text-grey-7 q-mt-sm">
-                  Preencha a coluna AÇÃO com <strong>criar</strong>,
-                  <strong>editar</strong> ou <strong>excluir</strong>. Linha sem
-                  ação é ignorada.
-                </div>
-              </div>
-
-              <div class="col-12 col-md-auto">
-                <q-btn
-                  color="primary"
-                  icon="fact_check"
-                  label="Conferir mudanças"
-                  :disable="!arquivoPlanilha"
-                  :loading="analisandoPlanilha"
-                  @click="analisarPlanilha"
-                />
-              </div>
-            </div>
-          </q-card-section>
-        </q-card>
 
         <!-- ================================================== -->
         <!-- VAGAS CADASTRADAS -->
@@ -550,6 +557,17 @@
                     <div class="text-caption text-grey-7">
                       {{ equipe.vagas.length }} vaga(s)
                     </div>
+                    <q-badge
+                      v-if="obterLinhaMassa(equipe).responsavelDivergente"
+                      color="orange-8"
+                    >
+                      responsáveis diferentes por disciplina
+                      <q-tooltip>
+                        Esta equipe tem Setor/Supervisor/Coordenador diferentes
+                        entre disciplinas. Salvar aqui iguala todas ao valor
+                        preenchido nesta linha.
+                      </q-tooltip>
+                    </q-badge>
                   </div>
 
                   <div class="col-6 col-md-2">
@@ -715,6 +733,19 @@
           />
 
           <q-input v-model="edicaoPrefixo" outlined dense label="Prefixo" />
+
+          <q-banner
+            v-if="edicaoResponsavelDivergente"
+            class="bg-orange-1 text-orange-9"
+            dense
+            rounded
+          >
+            Esta equipe tem disciplinas com Setor/Supervisor/Coordenador
+            diferentes entre si. Salvar aqui vai igualar TODAS as
+            disciplinas ao valor preenchido abaixo. Para manter
+            responsáveis diferentes por disciplina, use a planilha ou a
+            edição em massa em vez deste formulário.
+          </q-banner>
 
           <q-select
             v-model="edicaoSetor"
@@ -960,6 +991,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 
 import CabecalhoApp from '../components/CabecalhoApp.vue'
 import MarcaDaguaFundo from '../components/MarcaDaguaFundo.vue'
+import { PODE_GERENCIAR_VAGAS } from '../composables/useSessao'
 import {
   equipeCombinaComSetor,
   equipeCombinaComTipo,
@@ -972,6 +1004,8 @@ import {
   SETOR_TODOS,
   TIPO_TODOS
 } from '../utils/equipes'
+
+definePage({ meta: { permissao: PODE_GERENCIAR_VAGAS } })
 
 // ============================================================
 // ESTADO
@@ -1017,6 +1051,7 @@ const edicaoSetor = ref(null)
 const edicaoSupervisor = ref('')
 const edicaoCoordenador = ref('')
 const edicaoVagas = ref([])
+const edicaoResponsavelDivergente = ref(false)
 const salvandoEdicao = ref(false)
 const setoresNegocio = ref([])
 
@@ -1390,6 +1425,26 @@ async function aplicarPlanilha() {
   }
 }
 
+// setor/supervisor/coordenador sao por (equipe + disciplina): uma equipe
+// com mais de uma disciplina (ex.: Folguista com CONSTRUÇÃO e PODA) pode
+// legitimamente ter responsaveis diferentes por disciplina. Os formularios
+// de edicao rapida (individual e em massa) so tem UM campo para as tres,
+// entao salvar neles iguala todas as disciplinas ao valor mostrado — esta
+// funcao detecta o caso para avisar antes de deixar isso acontecer sem
+// querer.
+function temResponsavelDivergente(vagasPadrao) {
+  const responsavelPorTipo = new Map()
+  for (const vaga of vagasPadrao) {
+    if (!responsavelPorTipo.has(vaga.tipo)) {
+      responsavelPorTipo.set(
+        vaga.tipo,
+        `${vaga.setor || ''}|${vaga.supervisor || ''}|${vaga.coordenador || ''}`
+      )
+    }
+  }
+  return new Set(responsavelPorTipo.values()).size > 1
+}
+
 function abrirEdicaoEquipe(equipe) {
   equipeEmEdicao.value = equipe
   edicaoBase.value = equipe.base
@@ -1399,6 +1454,7 @@ function abrirEdicaoEquipe(equipe) {
   edicaoSetor.value = vagasPadrao.find(vaga => vaga.setor)?.setor || null
   edicaoSupervisor.value = vagasPadrao.find(vaga => vaga.supervisor)?.supervisor || ''
   edicaoCoordenador.value = vagasPadrao.find(vaga => vaga.coordenador)?.coordenador || ''
+  edicaoResponsavelDivergente.value = temResponsavelDivergente(vagasPadrao)
 
   const agrupado = new Map()
   for (const vaga of vagasPadrao) {
@@ -1456,6 +1512,17 @@ function calcularConflitosReducao() {
 async function salvarEdicaoEquipe(confirmarRemocoesIds = null) {
   erro.value = ''
   sucesso.value = ''
+
+  if (
+    edicaoResponsavelDivergente.value &&
+    !window.confirm(
+      'Esta equipe tem Setor/Supervisor/Coordenador diferentes entre ' +
+        'disciplinas. Salvar agora vai igualar todas as disciplinas ao ' +
+        'valor preenchido no formulário. Confirma?'
+    )
+  ) {
+    return
+  }
 
   let confirmarRemocoes = confirmarRemocoesIds
 
@@ -1543,6 +1610,7 @@ function linhaEdicaoMassa(equipe) {
     setor: vagasPadrao.find(vaga => vaga.setor)?.setor || null,
     supervisor: vagasPadrao.find(vaga => vaga.supervisor)?.supervisor || '',
     coordenador: vagasPadrao.find(vaga => vaga.coordenador)?.coordenador || '',
+    responsavelDivergente: temResponsavelDivergente(vagasPadrao),
     vagas: [...agrupado.entries()].map(([chave, quantidade]) => {
       const [tipo, funcao] = chave.split('|')
       return { tipo, funcao, quantidade }
@@ -1611,6 +1679,22 @@ function calcularConflitosReducaoEquipe(equipe, linha) {
 async function salvarEdicaoMassa() {
   erro.value = ''
   sucesso.value = ''
+
+  const equipesDivergentes = equipesFiltradas.value.filter(
+    equipe => obterLinhaMassa(equipe).responsavelDivergente
+  )
+  if (equipesDivergentes.length) {
+    const lista = equipesDivergentes.map(e => `${e.prefixo} / ${e.base}`).join('\n')
+    if (
+      !window.confirm(
+        'Estas equipes têm Setor/Supervisor/Coordenador diferentes entre ' +
+          'disciplinas. Salvar agora vai igualar todas as disciplinas de ' +
+          `cada uma ao valor preenchido na grade:\n\n${lista}\n\nConfirma?`
+      )
+    ) {
+      return
+    }
+  }
 
   const conflitosPorEquipe = new Map()
   for (const equipe of equipesFiltradas.value) {

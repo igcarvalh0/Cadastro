@@ -87,7 +87,8 @@ class ComposicaoEquipe(Base):
     equipe_id = Column(
         Integer,
         ForeignKey("equipes.id"),
-        nullable=False
+        nullable=False,
+        index=True
     )
 
     FUNÇÃO_ER = Column(String, nullable=False)

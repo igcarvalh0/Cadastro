@@ -24,6 +24,7 @@ pip install -r requirements.txt
    - `006_renomear_mestre_para_administrador.sql` — renomeia o nivel MESTRE para ADMINISTRADOR.
    - `007_add_niveis_permissoes.sql` — permissoes por nivel personalizaveis pelo Administrador.
    - `008_add_hierarquia_usuarios.sql` — hierarquia Gerente -> Coordenador -> Supervisor.
+   - `009_add_indice_equipe_id.sql` — índice em composicoes_equipes.equipe_id (melhora a carga de equipes/resumo).
 
    Cada arquivo traz no cabecalho o que conferir antes de rodar.
 
