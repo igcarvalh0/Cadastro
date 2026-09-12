@@ -89,29 +89,29 @@ NIVEIS = {
     NIVEL_GERENTE: {
         "rotulo": "Gerente",
         "descricao": (
-            "Aloca e remove colaboradores em todas as equipes e bases dos "
-            "Coordenadores sob sua responsabilidade (e dos Supervisores "
-            "deles)."
+            "Aloca, troca e remove colaboradores em todas as equipes e "
+            "bases dos Coordenadores sob sua responsabilidade (e dos "
+            "Supervisores deles)."
         ),
-        "permissoes": {VER_RESUMO, VER_EQUIPES, ALOCAR, REMOVER_ALOCACAO},
+        "permissoes": {VER_RESUMO, VER_EQUIPES, ALOCAR, EDITAR_ALOCACAO, REMOVER_ALOCACAO},
         "ignora_vinculos": False,
     },
     NIVEL_COORDENADOR: {
         "rotulo": "Coordenador",
         "descricao": (
-            "Aloca e remove colaboradores em todas as equipes e bases dos "
-            "Supervisores sob sua responsabilidade."
+            "Aloca, troca e remove colaboradores em todas as equipes e "
+            "bases dos Supervisores sob sua responsabilidade."
         ),
-        "permissoes": {VER_RESUMO, VER_EQUIPES, ALOCAR, REMOVER_ALOCACAO},
+        "permissoes": {VER_RESUMO, VER_EQUIPES, ALOCAR, EDITAR_ALOCACAO, REMOVER_ALOCACAO},
         "ignora_vinculos": False,
     },
     NIVEL_SUPERVISOR: {
         "rotulo": "Supervisor",
         "descricao": (
-            "Visualiza o resumo e as equipes; aloca e remove colaboradores "
-            "somente nas bases e nos tipos de equipe vinculados a ele."
+            "Visualiza o resumo e as equipes; aloca, troca e remove "
+            "colaboradores nas equipes vinculadas a ele."
         ),
-        "permissoes": {VER_RESUMO, VER_EQUIPES, ALOCAR, REMOVER_ALOCACAO},
+        "permissoes": {VER_RESUMO, VER_EQUIPES, ALOCAR, EDITAR_ALOCACAO, REMOVER_ALOCACAO},
         "ignora_vinculos": False,
     },
 }
