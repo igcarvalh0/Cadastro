@@ -451,37 +451,32 @@ def pode_realizar_operacao(
 ):
     """Diz se o usuario pode ALOCAR/EDITAR/REMOVER numa vaga/equipe dada.
 
-    "O que pode fazer" e a PERMISSAO do nivel (ver PERMISSAO_POR_OPERACAO —
-    editavel na tela de Usuarios > Niveis de acesso, igual as demais
-    permissoes). "Sobre quais equipes" continua nos vinculos do usuario.
+    So depende da PERMISSAO do nivel (ver PERMISSAO_POR_OPERACAO — editavel
+    na tela de Usuarios > Niveis de acesso). O vinculo (BASE/TIPO_EQUIPE/
+    SETOR/EQUIPE) NAO entra mais nesta checagem — ele continua decidindo o
+    que o usuario VE (equipe_visivel, nas telas de Resumo/Banco de
+    Dados/Cadastro de Vagas), so nao trava mais a AÇÃO em si.
 
-    ADMINISTRADOR (ignora_vinculos) sempre pode.
-    SUPERVISOR: precisa ter a permissao da operacao E os vinculos (BASE+TIPO_EQUIPE
-      obrigatorios, SETOR e EQUIPE quando cadastrados) batendo com a vaga
-      (ver pode_atuar_na_base_e_tipo).
-    GERENTE e COORDENADOR: mesma regra, mas usando o escopo EFETIVO — a uniao
-      dos vinculos de todos os Supervisores abaixo dele na hierarquia (ja
-      resolvida em descrever_usuario/escopo_efetivo e devolvida em
-      usuario["vinculos"], entao a checagem em si e identica a do Supervisor).
+    Motivo: um Supervisor vinculado a um tipo de equipe (ex.: MULTI) as
+    vezes precisa alocar um colaborador que ja esta numa vaga de outra
+    disciplina (ex.: CONSTRUÇÃO), invisivel pra ele. A trava antiga barrava
+    essa troca legitima com "Seu acesso não cobre a base ou o tipo de
+    equipe desta vaga" — em vez disso, quem chama esta funcao (alocar,
+    editar-alocacao, remover, planilha de alocacoes) ja mostra de onde o
+    colaborador esta saindo (prefixo + tipo de equipe, em "alocacao_atual")
+    e pede confirmacao antes de mover.
+
+    base/tipo_equipe/equipe_id/setor ficam no parametro por compatibilidade
+    de chamada (nao usados mais aqui).
     """
     if not usuario:
         return False
-    if usuario.get("ignora_vinculos"):
-        return True
 
     permissao_necessaria = PERMISSAO_POR_OPERACAO.get(operacao)
     if permissao_necessaria and permissao_necessaria not in (usuario.get("permissoes") or ()):
         return False
 
-    nivel = usuario.get("nivel")
-
-    if nivel in (NIVEL_SUPERVISOR, NIVEL_COORDENADOR, NIVEL_GERENTE):
-        return pode_atuar_na_base_e_tipo(
-            usuario, base, tipo_equipe, setor=setor, equipe_id=equipe_id
-        )
-
-    # Nivel sem regra de escopo definida: nega por padrao.
-    return False
+    return True
 
 
 # ============================================================

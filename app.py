@@ -2341,6 +2341,7 @@ def analisar_planilha_alocacoes(arquivo, session):
                 "composicao_id": comp_atual.id if comp_atual else None,
                 "equipe": equipe_atual.PREFIXO if equipe_atual else "",
                 "base": equipe_atual.BASE if equipe_atual else "",
+                "tipo_equipe": tipo_equipe_da_vaga(comp_atual) if comp_atual else "",
                 "funcao_er": comp_atual.FUNÇÃO_ER if comp_atual else "",
             }
         plano["alocar"].append(item)
@@ -2611,6 +2612,7 @@ def adicionar_folguista_extra(equipe_id):
                         "equipe_id": equipe_atual.id if equipe_atual else None,
                         "equipe": equipe_atual.PREFIXO if equipe_atual else "",
                         "base": equipe_atual.BASE if equipe_atual else "",
+                        "tipo_equipe": tipo_equipe_da_vaga(comp_atual) if comp_atual else "",
                         "funcao_er": comp_atual.FUNÇÃO_ER if comp_atual else "",
                     },
                 }), 409
@@ -2954,6 +2956,7 @@ def alocar_colaborador():
                         "equipe_id": equipe_atual.id if equipe_atual else None,
                         "equipe": equipe_atual.PREFIXO if equipe_atual else "",
                         "base": equipe_atual.BASE if equipe_atual else "",
+                        "tipo_equipe": tipo_equipe_da_vaga(comp_atual) if comp_atual else "",
                         "funcao_er": comp_atual.FUNÇÃO_ER if comp_atual else "",
                     },
                 }), 409
@@ -3142,6 +3145,7 @@ def editar_alocacao():
                         "equipe_id": equipe_atual.id if equipe_atual else None,
                         "equipe": equipe_atual.PREFIXO if equipe_atual else "",
                         "base": equipe_atual.BASE if equipe_atual else "",
+                        "tipo_equipe": tipo_equipe_da_vaga(comp_atual) if comp_atual else "",
                         "funcao_er": comp_atual.FUNÇÃO_ER if comp_atual else "",
                     },
                 }), 409

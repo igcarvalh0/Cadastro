@@ -868,7 +868,11 @@
               >
                 <q-checkbox
                   :model-value="conflitosConfirmados.has(item.chapa)"
-                  :label="`${item.chapa} - ${item.nome} (estava em ${item.alocacao_atual?.equipe || '?'})`"
+                  :label="
+                    `${item.chapa} - ${item.nome} (estava em ${item.alocacao_atual?.equipe || '?'}` +
+                    (item.alocacao_atual?.tipo_equipe ? `, ${item.alocacao_atual.tipo_equipe}` : '') +
+                    ')'
+                  "
                   @update:model-value="alternarConflito(item.chapa)"
                 />
               </div>
@@ -1434,7 +1438,8 @@ async function salvarEdicaoAlocacao(confirmarTransferencia = false) {
     if (resposta.status === 409 && dados.conflito) {
       const atual = dados.alocacao_atual || {}
       const descricaoAtual = atual.equipe
-        ? `na equipe ${atual.equipe} (${atual.base || ''})`
+        ? `na equipe ${atual.equipe} (${atual.base || ''})` +
+          (atual.tipo_equipe ? ` — tipo de equipe: ${atual.tipo_equipe}` : '')
         : 'em outra equipe'
 
       if (
@@ -1505,7 +1510,8 @@ async function salvarFolguistaExtra(confirmarTransferencia = false) {
     if (resposta.status === 409 && dados.conflito) {
       const atual = dados.alocacao_atual || {}
       const descricaoAtual = atual.equipe
-        ? `na equipe ${atual.equipe} (${atual.base || ''})`
+        ? `na equipe ${atual.equipe} (${atual.base || ''})` +
+          (atual.tipo_equipe ? ` — tipo de equipe: ${atual.tipo_equipe}` : '')
         : 'em outra equipe'
 
       if (
@@ -1725,7 +1731,8 @@ async function alocarColaborador(confirmarTransferencia = false) {
     if (resposta.status === 409 && dados.conflito) {
       const atual = dados.alocacao_atual || {}
       const descricaoAtual = atual.equipe
-        ? `na equipe ${atual.equipe} (${atual.base || ''}), vaga ${atual.funcao_er || ''}`
+        ? `na equipe ${atual.equipe} (${atual.base || ''}), vaga ${atual.funcao_er || ''}` +
+          (atual.tipo_equipe ? ` — tipo de equipe: ${atual.tipo_equipe}` : '')
         : 'em outra equipe'
 
       if (
