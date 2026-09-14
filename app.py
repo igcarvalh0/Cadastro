@@ -1,5 +1,6 @@
 import io
 import os
+import re
 import secrets
 import unicodedata
 from datetime import datetime, timedelta, timezone
@@ -3518,6 +3519,627 @@ def remover_usuario(usuario_id):
         session.rollback()
         print(f"[ERRO] remover_usuario: {erro}")
         return jsonify({"erro": "Não foi possível remover o usuário."}), 500
+    finally:
+        session.close()
+
+
+# ============================================================
+# API - PLANILHA DE USUÁRIOS (CRIAR/EDITAR EM LOTE)
+# ============================================================
+#
+# Mesmo caminho das outras planilhas do sistema (baixar -> preencher ->
+# prévia -> aplicar), com uma diferença: a planilha baixada já vem com os
+# usuários de hoje preenchidos. É o MESMO arquivo para editar em lote (mexe
+# na linha de quem já existe) e para cadastrar gente nova (acrescenta
+# linhas no fim).
+#
+# NUNCA apaga ninguém: quem sumir da planilha fica exatamente como está.
+# Para tirar o acesso de alguém, escreva NAO na coluna ATIVO; para excluir
+# de vez, use o botão da lista de usuários.
+
+COLUNA_USU_LOGIN = "USUARIO"
+COLUNAS_PLANILHA_USUARIOS = (
+    COLUNA_USU_LOGIN,
+    "NOME",
+    "NIVEL",
+    "ATIVO",
+    "RESPONSAVEL",
+    "SENHA",
+    "BASE",
+    "TIPO_EQUIPE",
+    "SETOR",
+    "EQUIPE",
+)
+
+# USUARIO/NOME/NIVEL identificam e classificam a pessoa; sem uma delas a
+# linha não dá pra interpretar. O resto é opcional: coluna ausente =
+# "não mexe nesse campo"; coluna presente e vazia = "limpa esse campo".
+COLUNAS_OBRIGATORIAS_USUARIOS = (COLUNA_USU_LOGIN, "NOME", "NIVEL")
+
+COLUNA_POR_VINCULO = {
+    auth.VINCULO_BASE: "BASE",
+    auth.VINCULO_TIPO_EQUIPE: "TIPO_EQUIPE",
+    auth.VINCULO_SETOR: "SETOR",
+    auth.VINCULO_EQUIPE: "EQUIPE",
+}
+
+SEPARADOR_VINCULO_PLANILHA = " / "
+
+
+def rotulo_equipe_vinculo(equipe):
+    """Como a equipe aparece na coluna EQUIPE: mesmo formato do campo na
+    tela de usuários (PREFIXO — BASE), pra quem preenche reconhecer."""
+    return f"{equipe.PREFIXO or 'Equipe'} — {equipe.BASE or ''}".strip()
+
+
+def _texto_celula(linha, coluna, colunas):
+    """Texto limpo de uma célula, ou "" quando a coluna não existe/está
+    vazia."""
+    if coluna not in colunas:
+        return ""
+    valor = linha.get(colunas[coluna])
+    if valor is None or (isinstance(valor, float) and pd.isna(valor)):
+        return ""
+    texto = str(valor).strip()
+    # o pandas lê CHAPA/códigos numéricos como float ("123.0")
+    return texto[:-2] if texto.endswith(".0") else texto
+
+
+def _lista_da_celula(texto):
+    """Vários valores numa célula só, separados por / ou ; — do jeito que a
+    exportação escreve (BACABAL / ITAPECURU)."""
+    if not texto:
+        return []
+    partes = [p.strip() for p in re.split(r"[/;]", texto)]
+    return [p for p in dict.fromkeys(partes) if p]
+
+
+VALORES_SIM = {"SIM", "S", "TRUE", "VERDADEIRO", "1", "X", "ATIVO"}
+VALORES_NAO = {"NAO", "N", "FALSE", "FALSO", "0", "INATIVO"}
+
+
+def _booleano_da_celula(texto):
+    """SIM/NAO da coluna ATIVO. Devolve (valor, erro)."""
+    normalizado = normalizar(texto)
+    if normalizado in VALORES_SIM:
+        return True, None
+    if normalizado in VALORES_NAO:
+        return False, None
+    return None, f"ATIVO precisa ser SIM ou NAO (veio '{texto}')."
+
+
+def _nivel_da_celula(texto):
+    """Aceita tanto o código (SUPERVISOR) quanto o rótulo da tela
+    (Supervisor). Devolve (nivel, erro)."""
+    alvo = normalizar(texto)
+    for nome, dados in auth.NIVEIS.items():
+        if alvo in (normalizar(nome), normalizar(dados["rotulo"])):
+            return nome, None
+    validos = ", ".join(dados["rotulo"] for dados in auth.NIVEIS.values())
+    return None, f"Nível '{texto}' não existe. Use um destes: {validos}."
+
+
+def montar_planilha_usuarios(session):
+    """1 linha por usuário, com os vínculos já resolvidos em texto. A coluna
+    SENHA sai sempre vazia — o banco guarda só o hash, e em branco significa
+    "mantém a senha atual" na hora de subir de volta."""
+    usuarios = (
+        session.query(Usuario)
+        .options(joinedload(Usuario.vinculos))
+        .order_by(Usuario.NOME)
+        .all()
+    )
+    por_id = {u.id: u for u in usuarios}
+    equipes_por_id = {
+        str(e.id): rotulo_equipe_vinculo(e) for e in session.query(Equipe).all()
+    }
+
+    linhas = []
+    for usuario in usuarios:
+        vinculos = {}
+        for vinculo in usuario.vinculos:
+            vinculos.setdefault(vinculo.TIPO, []).append(vinculo.VALOR)
+
+        def coluna_vinculo(tipo):
+            valores = sorted(vinculos.get(tipo, []))
+            if tipo == auth.VINCULO_EQUIPE:
+                valores = [equipes_por_id.get(v, v) for v in valores]
+            return SEPARADOR_VINCULO_PLANILHA.join(valores)
+
+        responsavel = por_id.get(usuario.RESPONSAVEL_ID)
+
+        linhas.append({
+            COLUNA_USU_LOGIN: usuario.USUARIO,
+            "NOME": usuario.NOME,
+            "NIVEL": auth.NIVEIS.get(usuario.NIVEL, {}).get("rotulo", usuario.NIVEL),
+            "ATIVO": "SIM" if usuario.ATIVO else "NAO",
+            "RESPONSAVEL": responsavel.USUARIO if responsavel else "",
+            "SENHA": "",
+            "BASE": coluna_vinculo(auth.VINCULO_BASE),
+            "TIPO_EQUIPE": coluna_vinculo(auth.VINCULO_TIPO_EQUIPE),
+            "SETOR": coluna_vinculo(auth.VINCULO_SETOR),
+            "EQUIPE": coluna_vinculo(auth.VINCULO_EQUIPE),
+        })
+
+    return pd.DataFrame(linhas, columns=list(COLUNAS_PLANILHA_USUARIOS))
+
+
+def montar_aba_opcoes_usuarios(session):
+    """Aba de consulta com TUDO que pode ser escrito em cada coluna: os
+    níveis, os setores, e as bases/disciplinas/equipes que existem hoje no
+    cadastro de vagas. Serve de cola pra quem preenche — a análise não lê
+    esta aba."""
+    equipes = session.query(Equipe).order_by(Equipe.BASE, Equipe.PREFIXO).all()
+
+    valores = []
+    for nome, dados in auth.NIVEIS.items():
+        acima = auth.NIVEL_DO_RESPONSAVEL.get(nome)
+        observacao = (
+            f"RESPONSAVEL precisa ser um {auth.NIVEIS[acima]['rotulo']}"
+            if acima else "fica no topo — deixe RESPONSAVEL em branco"
+        )
+        if dados.get("ignora_vinculos"):
+            observacao = "vê tudo — deixe as colunas de vínculo em branco"
+        valores.append(("NIVEL", dados["rotulo"], observacao))
+
+    for setor in SETORES_NEGOCIO:
+        valores.append(("SETOR", setor, "todas as equipes desse setor"))
+
+    for base in sorted({(e.BASE or "").strip() for e in equipes if e.BASE}):
+        valores.append(("BASE", base, "todas as equipes dessa base"))
+
+    tipos = set()
+    for equipe in equipes:
+        tipos.update(tipos_da_equipe(equipe))
+    for tipo in sorted(tipos):
+        valores.append(("TIPO_EQUIPE", tipo, "todas as equipes dessa disciplina"))
+
+    for equipe in equipes:
+        valores.append(("EQUIPE", rotulo_equipe_vinculo(equipe), "só esta equipe"))
+
+    valores.append(("ATIVO", "SIM ou NAO", "NAO tira o acesso sem apagar o cadastro"))
+    valores.append((
+        "SENHA",
+        "(em branco)",
+        "obrigatória só para usuário novo; em branco mantém a senha atual",
+    ))
+
+    return pd.DataFrame(valores, columns=["COLUNA", "VALOR ACEITO", "O QUE FAZ"])
+
+
+def analisar_planilha_usuarios(arquivo, session):
+    """Lê a planilha e monta o plano (criar/atualizar/ignoradas/erros) sem
+    gravar nada. As MESMAS regras do formulário da tela valem aqui: nível
+    válido, login único, senha mínima, hierarquia do responsável, só
+    Administrador cria Administrador, e nunca zerar os Administradores
+    ativos.
+    """
+    try:
+        df = pd.read_excel(arquivo)
+    except Exception as erro:
+        raise ValueError(f"Não foi possível ler a planilha: {erro}")
+
+    colunas = {str(c).strip().upper(): c for c in df.columns}
+    faltando = [c for c in COLUNAS_OBRIGATORIAS_USUARIOS if c not in colunas]
+    if faltando:
+        raise ValueError(f"A planilha precisa das colunas {', '.join(faltando)}.")
+
+    eu = auth.usuario_logado() or {}
+    sou_administrador = bool(eu.get("ignora_vinculos"))
+
+    existentes = {
+        u.USUARIO.strip().upper(): u
+        for u in session.query(Usuario).options(joinedload(Usuario.vinculos)).all()
+    }
+    equipes = session.query(Equipe).all()
+    equipe_por_rotulo = {normalizar(rotulo_equipe_vinculo(e)): str(e.id) for e in equipes}
+    equipe_por_id = {str(e.id): str(e.id) for e in equipes}
+
+    plano = {"criar": [], "atualizar": [], "erros": [], "ignoradas": 0}
+    logins_na_planilha = {}
+
+    # quem a planilha vai deixar como Administrador ativo no fim, pra não
+    # aplicar uma planilha que tranca todo mundo pra fora do sistema
+    admins_ativos_depois = {
+        login for login, u in existentes.items()
+        if u.NIVEL == auth.NIVEL_ADMINISTRADOR and u.ATIVO
+    }
+
+    def registrar_erro(numero, login, mensagem):
+        plano["erros"].append({"linha": numero, "usuario": login, "erro": mensagem})
+
+    for indice, linha in df.iterrows():
+        numero = int(indice) + 2
+        login = _texto_celula(linha, COLUNA_USU_LOGIN, colunas)
+
+        if not login and not _texto_celula(linha, "NOME", colunas):
+            continue  # linha em branco no fim da planilha
+
+        if not login:
+            registrar_erro(numero, "", "USUARIO não informado.")
+            continue
+
+        chave = login.upper()
+        if chave in logins_na_planilha:
+            registrar_erro(
+                numero, login,
+                f"O usuário '{login}' já aparece na linha {logins_na_planilha[chave]}."
+            )
+            continue
+        logins_na_planilha[chave] = numero
+
+        nome = _texto_celula(linha, "NOME", colunas)
+        if not nome:
+            registrar_erro(numero, login, "NOME não informado.")
+            continue
+
+        nivel, problema = _nivel_da_celula(_texto_celula(linha, "NIVEL", colunas))
+        if problema:
+            registrar_erro(numero, login, problema)
+            continue
+
+        atual = existentes.get(chave)
+        novo = atual is None
+
+        ativo = True if novo else bool(atual.ATIVO)
+        texto_ativo = _texto_celula(linha, "ATIVO", colunas)
+        if texto_ativo:
+            ativo, problema = _booleano_da_celula(texto_ativo)
+            if problema:
+                registrar_erro(numero, login, problema)
+                continue
+        elif "ATIVO" in colunas and novo:
+            ativo = True
+
+        senha = _texto_celula(linha, "SENHA", colunas)
+        if novo and not senha:
+            registrar_erro(numero, login, "Usuário novo precisa de SENHA.")
+            continue
+        if senha:
+            problema_senha = auth.validar_senha(senha)
+            if problema_senha:
+                registrar_erro(numero, login, problema_senha)
+                continue
+
+        if nivel == auth.NIVEL_ADMINISTRADOR and not sou_administrador:
+            if novo or atual.NIVEL != auth.NIVEL_ADMINISTRADOR:
+                registrar_erro(
+                    numero, login,
+                    "Só um Administrador pode criar ou promover outro Administrador."
+                )
+                continue
+
+        # vínculos: coluna ausente = mantém o que já está gravado;
+        # coluna presente e vazia = limpa aquele vínculo
+        vinculos = {}
+        erro_vinculo = None
+        for tipo, coluna in COLUNA_POR_VINCULO.items():
+            if coluna not in colunas:
+                if atual:
+                    valores_atuais = [v.VALOR for v in atual.vinculos if v.TIPO == tipo]
+                    if valores_atuais:
+                        vinculos[tipo] = valores_atuais
+                continue
+
+            valores = _lista_da_celula(_texto_celula(linha, coluna, colunas))
+            if tipo == auth.VINCULO_EQUIPE:
+                convertidos = []
+                for valor in valores:
+                    id_equipe = equipe_por_id.get(valor) or equipe_por_rotulo.get(normalizar(valor))
+                    if not id_equipe:
+                        erro_vinculo = (
+                            f"Equipe '{valor}' não encontrada. Use o formato da aba "
+                            "Opções (PREFIXO — BASE)."
+                        )
+                        break
+                    convertidos.append(id_equipe)
+                valores = convertidos
+            if erro_vinculo:
+                break
+            if valores:
+                vinculos[tipo] = valores
+
+        if erro_vinculo:
+            registrar_erro(numero, login, erro_vinculo)
+            continue
+
+        if nivel == auth.NIVEL_ADMINISTRADOR:
+            vinculos = {}
+
+        login_responsavel = _texto_celula(linha, "RESPONSAVEL", colunas)
+        nivel_esperado = auth.NIVEL_DO_RESPONSAVEL.get(nivel)
+
+        if login_responsavel and not nivel_esperado:
+            registrar_erro(
+                numero, login,
+                f"{auth.NIVEIS[nivel]['rotulo']} fica no topo da hierarquia e não tem responsável."
+            )
+            continue
+        if login_responsavel and login_responsavel.upper() == chave:
+            registrar_erro(numero, login, "Um usuário não pode ser responsável por si mesmo.")
+            continue
+
+        item = {
+            "linha": numero,
+            "usuario": login,
+            "nome": nome,
+            "nivel": nivel,
+            "nivel_rotulo": auth.NIVEIS[nivel]["rotulo"],
+            "ativo": ativo,
+            "senha": senha,
+            "vinculos": vinculos,
+            "responsavel": login_responsavel,
+            "id": atual.id if atual else None,
+        }
+
+        # acompanha quantos Administradores ativos sobram depois da planilha
+        if nivel == auth.NIVEL_ADMINISTRADOR and ativo:
+            admins_ativos_depois.add(chave)
+        else:
+            admins_ativos_depois.discard(chave)
+
+        if novo:
+            plano["criar"].append(item)
+            continue
+
+        mudancas = []
+        if atual.NOME != nome:
+            mudancas.append({"campo": "Nome", "de": atual.NOME, "para": nome})
+        if atual.NIVEL != nivel:
+            mudancas.append({
+                "campo": "Nível",
+                "de": auth.NIVEIS.get(atual.NIVEL, {}).get("rotulo", atual.NIVEL),
+                "para": auth.NIVEIS[nivel]["rotulo"],
+            })
+        if bool(atual.ATIVO) != ativo:
+            mudancas.append({
+                "campo": "Ativo",
+                "de": "SIM" if atual.ATIVO else "NAO",
+                "para": "SIM" if ativo else "NAO",
+            })
+
+        vinculos_atuais = {}
+        for vinculo in atual.vinculos:
+            vinculos_atuais.setdefault(vinculo.TIPO, []).append(vinculo.VALOR)
+        for tipo, coluna in COLUNA_POR_VINCULO.items():
+            antes = sorted(vinculos_atuais.get(tipo, []))
+            depois = sorted(vinculos.get(tipo, []))
+            if antes != depois:
+                mudancas.append({
+                    "campo": coluna,
+                    "de": SEPARADOR_VINCULO_PLANILHA.join(antes) or "—",
+                    "para": SEPARADOR_VINCULO_PLANILHA.join(depois) or "—",
+                })
+
+        responsavel_atual = ""
+        if atual.RESPONSAVEL_ID:
+            for u in existentes.values():
+                if u.id == atual.RESPONSAVEL_ID:
+                    responsavel_atual = u.USUARIO
+                    break
+        if (responsavel_atual or "").upper() != (login_responsavel or "").upper():
+            mudancas.append({
+                "campo": "Responde a",
+                "de": responsavel_atual or "—",
+                "para": login_responsavel or "—",
+            })
+
+        if senha:
+            mudancas.append({"campo": "Senha", "de": "—", "para": "(nova senha)"})
+
+        if not mudancas:
+            plano["ignoradas"] += 1
+            continue
+
+        item["mudancas"] = mudancas
+        plano["atualizar"].append(item)
+
+    # o responsável pode estar sendo criado na MESMA planilha, então esta
+    # checagem roda depois de conhecer todas as linhas
+    niveis_planejados = {
+        item["usuario"].upper(): item["nivel"]
+        for item in plano["criar"] + plano["atualizar"]
+    }
+    for item in plano["criar"] + plano["atualizar"]:
+        login_responsavel = item["responsavel"]
+        if not login_responsavel:
+            continue
+
+        chave_responsavel = login_responsavel.upper()
+        nivel_responsavel = niveis_planejados.get(chave_responsavel)
+        if nivel_responsavel is None:
+            existente = existentes.get(chave_responsavel)
+            nivel_responsavel = existente.NIVEL if existente else None
+
+        if nivel_responsavel is None:
+            registrar_erro(
+                item["linha"], item["usuario"],
+                f"Responsável '{login_responsavel}' não existe nem está sendo criado nesta planilha."
+            )
+            continue
+
+        esperado = auth.NIVEL_DO_RESPONSAVEL.get(item["nivel"])
+        if nivel_responsavel != esperado:
+            registrar_erro(
+                item["linha"], item["usuario"],
+                f"O responsável de um {auth.NIVEIS[item['nivel']]['rotulo']} precisa ser "
+                f"do nível {auth.NIVEIS[esperado]['rotulo']}."
+            )
+
+    if plano["erros"]:
+        # com erro nada é aplicado, então nem vale checar o resto
+        return plano
+
+    if not admins_ativos_depois:
+        plano["erros"].append({
+            "linha": 0,
+            "usuario": "",
+            "erro": "Esta planilha deixaria o sistema sem nenhum Administrador ativo.",
+        })
+
+    meu_login = (eu.get("usuario") or "").upper()
+    for item in plano["atualizar"]:
+        if item["usuario"].upper() != meu_login:
+            continue
+        if item["nivel"] != auth.NIVEL_ADMINISTRADOR or not item["ativo"]:
+            if existentes.get(meu_login) and existentes[meu_login].NIVEL == auth.NIVEL_ADMINISTRADOR:
+                plano["erros"].append({
+                    "linha": item["linha"],
+                    "usuario": item["usuario"],
+                    "erro": "Você não pode remover o seu próprio acesso de Administrador.",
+                })
+
+    return plano
+
+
+@app.route("/api/usuarios/planilha", methods=["GET"])
+@exige_permissao(auth.GERENCIAR_USUARIOS)
+def baixar_planilha_usuarios():
+    """Planilha com os usuários de hoje + uma aba de Opções com tudo que
+    pode ser preenchido em cada coluna."""
+    session = SessionLocal()
+    try:
+        df_usuarios = montar_planilha_usuarios(session)
+        df_opcoes = montar_aba_opcoes_usuarios(session)
+
+        buffer = io.BytesIO()
+        with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+            for nome_aba, df in (("Usuários", df_usuarios), ("Opções", df_opcoes)):
+                df.to_excel(writer, index=False, sheet_name=nome_aba)
+                planilha = writer.sheets[nome_aba]
+                for coluna in planilha.columns:
+                    largura = max(
+                        len(str(celula.value)) if celula.value is not None else 0
+                        for celula in coluna
+                    )
+                    planilha.column_dimensions[coluna[0].column_letter].width = max(
+                        14, min(largura + 3, 52)
+                    )
+                planilha.freeze_panes = "A2"
+
+        buffer.seek(0)
+        return send_file(
+            buffer,
+            mimetype=(
+                "application/vnd.openxmlformats-officedocument"
+                ".spreadsheetml.sheet"
+            ),
+            as_attachment=True,
+            download_name="usuarios.xlsx",
+        )
+    except Exception as erro:
+        print(f"[ERRO] baixar_planilha_usuarios: {erro}")
+        return jsonify({"erro": "Não foi possível gerar a planilha de usuários."}), 500
+    finally:
+        session.close()
+
+
+@app.route("/api/usuarios/planilha/previa", methods=["POST"])
+@exige_permissao(auth.GERENCIAR_USUARIOS)
+def prever_planilha_usuarios():
+    arquivo = request.files.get("arquivo")
+    if not arquivo:
+        return jsonify({"erro": "Arquivo não enviado."}), 400
+
+    session = SessionLocal()
+    try:
+        return jsonify(analisar_planilha_usuarios(arquivo, session))
+    except ValueError as erro:
+        return jsonify({"erro": str(erro)}), 400
+    except Exception as erro:
+        print(f"[ERRO] prever_planilha_usuarios: {erro}")
+        return jsonify({"erro": "Não foi possível analisar a planilha."}), 500
+    finally:
+        session.close()
+
+
+@app.route("/api/usuarios/planilha/aplicar", methods=["POST"])
+@exige_permissao(auth.GERENCIAR_USUARIOS)
+def aplicar_planilha_usuarios():
+    arquivo = request.files.get("arquivo")
+    if not arquivo:
+        return jsonify({"erro": "Arquivo não enviado."}), 400
+
+    session = SessionLocal()
+    try:
+        # reanalisa no momento de aplicar (o banco pode ter mudado desde a
+        # prévia), mesmo padrão da planilha de alocações
+        plano = analisar_planilha_usuarios(arquivo, session)
+
+        if plano["erros"]:
+            return jsonify({
+                "erro": "A planilha tem linhas com problema. Corrija antes de aplicar.",
+                "plano": plano,
+            }), 400
+
+        # 1ª passada: cria e atualiza todo mundo, sem tocar no responsável —
+        # ele pode estar sendo criado nesta mesma planilha
+        por_login = {}
+        for item in plano["criar"]:
+            usuario = Usuario(
+                USUARIO=item["usuario"],
+                NOME=item["nome"],
+                NIVEL=item["nivel"],
+                ATIVO=item["ativo"],
+                SENHA_HASH=auth.gerar_hash_senha(item["senha"]),
+            )
+            session.add(usuario)
+            session.flush()
+            auth.substituir_vinculos(session, usuario, item["vinculos"])
+            por_login[item["usuario"].upper()] = usuario
+
+        for item in plano["atualizar"]:
+            usuario = session.query(Usuario).filter(Usuario.id == item["id"]).first()
+            if not usuario:
+                continue
+            usuario.NOME = item["nome"]
+            usuario.NIVEL = item["nivel"]
+            usuario.ATIVO = item["ativo"]
+            if item["senha"]:
+                usuario.SENHA_HASH = auth.gerar_hash_senha(item["senha"])
+            auth.substituir_vinculos(session, usuario, item["vinculos"])
+            por_login[item["usuario"].upper()] = usuario
+
+        session.flush()
+
+        # 2ª passada: liga cada um ao responsável já com todos existindo
+        for item in plano["criar"] + plano["atualizar"]:
+            usuario = por_login.get(item["usuario"].upper())
+            if not usuario:
+                continue
+
+            if not item["responsavel"]:
+                usuario.RESPONSAVEL_ID = None
+                continue
+
+            chave = item["responsavel"].upper()
+            responsavel = por_login.get(chave)
+            if not responsavel:
+                responsavel = (
+                    session.query(Usuario)
+                    .filter(func.upper(Usuario.USUARIO) == chave)
+                    .first()
+                )
+            usuario.RESPONSAVEL_ID = responsavel.id if responsavel else None
+
+        session.commit()
+
+        return jsonify({
+            "sucesso": True,
+            "criados": len(plano["criar"]),
+            "atualizados": len(plano["atualizar"]),
+            "ignoradas": plano["ignoradas"],
+        })
+    except IntegrityError:
+        session.rollback()
+        return jsonify({"erro": "Algum login ficou repetido ao aplicar. Confira a planilha."}), 400
+    except ValueError as erro:
+        session.rollback()
+        return jsonify({"erro": str(erro)}), 400
+    except Exception as erro:
+        session.rollback()
+        print(f"[ERRO] aplicar_planilha_usuarios: {erro}")
+        return jsonify({"erro": "Não foi possível aplicar a planilha de usuários."}), 500
     finally:
         session.close()
 

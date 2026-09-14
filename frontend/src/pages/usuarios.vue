@@ -127,7 +127,12 @@
         <!-- ATUALIZAÇÃO DO CADASTRO DE COLABORADORES -->
         <!-- ================================================== -->
 
-        <q-card v-if="temPermissao(PODE_GERENCIAR_COLABORADORES)" bordered class="q-mb-md">
+        <div class="row q-col-gutter-md q-mb-md items-stretch">
+        <div
+          v-if="temPermissao(PODE_GERENCIAR_COLABORADORES)"
+          class="col-12 col-md-6 column"
+        >
+        <q-card bordered class="col column">
           <q-card-section>
             <div class="text-h6">Atualizar cadastro de colaboradores</div>
             <div class="text-caption text-grey-7">
@@ -230,6 +235,161 @@
             </div>
           </q-card-section>
         </q-card>
+        </div>
+
+        <!-- ================================================== -->
+        <!-- USUÁRIOS EM LOTE (EXPORTAR / SUBIR) -->
+        <!-- ================================================== -->
+
+        <div class="col-12 col-md-6 column">
+        <q-card bordered class="col column">
+          <q-card-section>
+            <div class="text-h6">Usuários em lote</div>
+            <div class="text-caption text-grey-7">
+              Baixe a planilha com os usuários de hoje, edite as linhas (ou
+              acrescente novas) e envie de volta. Serve para cadastrar e para
+              editar — inclusive nível, vínculos e quem responde a quem.
+            </div>
+          </q-card-section>
+
+          <q-separator />
+
+          <q-card-section class="col column">
+            <div class="q-mb-md">
+              <q-btn
+                unelevated
+                rounded
+                no-caps
+                dense
+                color="positive"
+                icon="download"
+                label="Baixar planilha de usuários"
+                :loading="baixandoPlanilhaUsuarios"
+                class="btn-exportar"
+                @click="baixarPlanilhaUsuarios"
+              />
+              <div class="text-caption text-grey-7 q-mt-sm">
+                Vem com todos os usuários preenchidos e uma aba
+                <strong>Opções</strong> listando o que pode ser escrito em cada
+                coluna (níveis, bases, disciplinas, setores e equipes).
+                <strong>Ninguém é excluído</strong> por sumir da planilha — para
+                tirar o acesso, escreva NAO na coluna ATIVO.
+              </div>
+            </div>
+
+            <div class="row q-col-gutter-md items-start">
+              <div class="col-12 col-md">
+                <q-file
+                  v-model="arquivoUsuarios"
+                  outlined
+                  dense
+                  clearable
+                  accept=".xlsx"
+                  label="Planilha de usuários (.xlsx)"
+                  @update:model-value="planoUsuarios = null"
+                >
+                  <template #prepend>
+                    <q-icon name="attach_file" />
+                  </template>
+                </q-file>
+              </div>
+
+              <div class="col-12 col-md-auto">
+                <q-btn
+                  color="primary"
+                  icon="fact_check"
+                  label="Conferir mudanças"
+                  :disable="!arquivoUsuarios"
+                  :loading="analisandoUsuarios"
+                  @click="analisarPlanilhaUsuarios"
+                />
+              </div>
+            </div>
+
+            <div v-if="planoUsuarios" class="q-mt-md">
+              <div class="row q-gutter-sm q-mb-sm">
+                <q-chip color="positive" text-color="white">
+                  {{ planoUsuarios.criar?.length || 0 }} novo(s)
+                </q-chip>
+                <q-chip color="primary" text-color="white">
+                  {{ planoUsuarios.atualizar?.length || 0 }} alterado(s)
+                </q-chip>
+                <q-chip color="grey-7" text-color="white">
+                  {{ planoUsuarios.ignoradas || 0 }} sem mudança
+                </q-chip>
+                <q-chip
+                  v-if="planoUsuarios.erros?.length"
+                  color="negative"
+                  text-color="white"
+                >
+                  {{ planoUsuarios.erros.length }} com erro
+                </q-chip>
+              </div>
+
+              <q-banner
+                v-if="planoUsuarios.erros?.length"
+                class="bg-red-1 text-negative q-mb-sm"
+                rounded
+                dense
+              >
+                <div
+                  v-for="(item, indice) in planoUsuarios.erros"
+                  :key="indice"
+                  class="text-caption"
+                >
+                  <strong v-if="item.linha">Linha {{ item.linha }}</strong>
+                  <strong v-else>Planilha</strong>
+                  <span v-if="item.usuario"> ({{ item.usuario }})</span>:
+                  {{ item.erro }}
+                </div>
+              </q-banner>
+
+              <q-list
+                v-if="linhasPlanoUsuarios.length"
+                bordered
+                dense
+                separator
+                class="rounded-borders q-mb-sm"
+              >
+                <q-item v-for="item in linhasPlanoUsuarios" :key="item.linha">
+                  <q-item-section>
+                    <q-item-label class="text-weight-medium">
+                      {{ item.usuario }} — {{ item.nome }}
+                      <q-badge
+                        :color="item.novo ? 'positive' : 'primary'"
+                        :label="item.novo ? 'novo' : 'alterado'"
+                        class="q-ml-xs"
+                      />
+                    </q-item-label>
+
+                    <q-item-label caption>
+                      {{ item.nivel_rotulo }}
+                      <span v-if="!item.ativo"> · será desativado</span>
+                    </q-item-label>
+
+                    <q-item-label
+                      v-for="(mudanca, indice) in item.mudancas || []"
+                      :key="indice"
+                      caption
+                    >
+                      {{ mudanca.campo }}: {{ mudanca.de }} → {{ mudanca.para }}
+                    </q-item-label>
+                  </q-item-section>
+                </q-item>
+              </q-list>
+
+              <q-btn
+                color="positive"
+                label="Confirmar e aplicar"
+                :disable="!!planoUsuarios.erros?.length || !linhasPlanoUsuarios.length"
+                :loading="aplicandoUsuarios"
+                @click="aplicarPlanilhaUsuarios"
+              />
+            </div>
+          </q-card-section>
+        </q-card>
+        </div>
+        </div>
 
         <!-- ================================================== -->
         <!-- LISTA DE USUÁRIOS -->
@@ -652,6 +812,29 @@ const detalheImportacao = ref('criados')
 const resumoColaboradores = ref(null)
 const analisandoColaboradores = ref(false)
 const aplicandoColaboradores = ref(false)
+
+// planilha de usuários em lote (exportar -> editar -> conferir -> aplicar)
+const arquivoUsuarios = ref(null)
+const baixandoPlanilhaUsuarios = ref(false)
+const planoUsuarios = ref(null)
+const analisandoUsuarios = ref(false)
+const aplicandoUsuarios = ref(false)
+
+// novos e alterados numa lista só, na ordem da planilha — o "novo" de cada
+// item é o que decide o selo e a cor na tela
+const linhasPlanoUsuarios = computed(() => {
+  if (!planoUsuarios.value) {
+    return []
+  }
+
+  const novos = (planoUsuarios.value.criar || []).map(item => ({ ...item, novo: true }))
+  const alterados = (planoUsuarios.value.atualizar || []).map(item => ({
+    ...item,
+    novo: false
+  }))
+
+  return [...novos, ...alterados].sort((a, b) => a.linha - b.linha)
+})
 
 // cópia local editável das permissões por nível, sincronizada sempre que
 // 'niveis' (vindo da sessão) muda — assim dá pra marcar/desmarcar antes de
@@ -1100,6 +1283,108 @@ async function aplicarPlanilhaColaboradores() {
     erro.value = e.message || 'Erro ao aplicar a planilha.'
   } finally {
     aplicandoColaboradores.value = false
+  }
+}
+
+// ============================================================
+// PLANILHA DE USUÁRIOS (EM LOTE)
+// ============================================================
+
+async function baixarPlanilhaUsuarios() {
+  limparAvisos()
+  baixandoPlanilhaUsuarios.value = true
+
+  try {
+    const resposta = await fetch('/api/usuarios/planilha')
+
+    if (!resposta.ok) {
+      const dados = await resposta.json().catch(() => ({}))
+      throw new Error(dados.erro || 'Erro ao gerar a planilha de usuários.')
+    }
+
+    const blob = await resposta.blob()
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'usuarios.xlsx'
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+  } catch (e) {
+    erro.value = e.message || 'Erro ao gerar a planilha de usuários.'
+  } finally {
+    baixandoPlanilhaUsuarios.value = false
+  }
+}
+
+async function analisarPlanilhaUsuarios() {
+  if (!arquivoUsuarios.value) {
+    return
+  }
+
+  limparAvisos()
+  analisandoUsuarios.value = true
+
+  try {
+    const corpo = new FormData()
+    corpo.append('arquivo', arquivoUsuarios.value)
+
+    const resposta = await fetch('/api/usuarios/planilha/previa', {
+      method: 'POST',
+      body: corpo
+    })
+
+    const dados = await resposta.json()
+
+    // a prévia com linhas em erro volta 200 com a lista de erros dentro;
+    // 400 aqui é problema no arquivo inteiro (coluna faltando, não é xlsx)
+    if (!resposta.ok) {
+      throw new Error(dados.erro || 'Erro ao analisar a planilha.')
+    }
+
+    planoUsuarios.value = dados
+  } catch (e) {
+    erro.value = e.message || 'Erro ao analisar a planilha.'
+  } finally {
+    analisandoUsuarios.value = false
+  }
+}
+
+async function aplicarPlanilhaUsuarios() {
+  if (!arquivoUsuarios.value) {
+    return
+  }
+
+  limparAvisos()
+  aplicandoUsuarios.value = true
+
+  try {
+    const corpo = new FormData()
+    corpo.append('arquivo', arquivoUsuarios.value)
+
+    const resposta = await fetch('/api/usuarios/planilha/aplicar', {
+      method: 'POST',
+      body: corpo
+    })
+
+    const dados = await resposta.json()
+
+    if (!resposta.ok || dados.erro) {
+      planoUsuarios.value = dados.plano || planoUsuarios.value
+      throw new Error(dados.erro || 'Erro ao aplicar a planilha.')
+    }
+
+    sucesso.value =
+      `Usuários atualizados: ${dados.criados} novo(s), ` +
+      `${dados.atualizados} alterado(s), ${dados.ignoradas} sem mudança.`
+    arquivoUsuarios.value = null
+    planoUsuarios.value = null
+    await carregarTudo()
+  } catch (e) {
+    erro.value = e.message || 'Erro ao aplicar a planilha.'
+  } finally {
+    aplicandoUsuarios.value = false
   }
 }
 
