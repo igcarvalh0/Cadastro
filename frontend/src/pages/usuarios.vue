@@ -439,7 +439,15 @@
                     Cada vínculo preenchido filtra uma dimensão; os que ficam
                     em branco não restringem. Só SETOR = todas as equipes
                     daquele setor, em qualquer base.
-                    <strong>Sem nenhum vínculo a pessoa não enxerga equipe alguma.</strong>
+                    <strong>Sem nenhum vínculo a pessoa não enxerga equipe alguma</strong>
+
+                    <template v-if="nivelSomaVinculoDeSubordinados">
+                      — a não ser que algum Supervisor (ou Coordenador)
+                      configurado para responder a ela tenha vínculo próprio:
+                      o alcance final é a <strong>soma</strong> do vínculo
+                      preenchido aqui com o de todos que respondem a ela.
+                    </template>
+                    <template v-else>.</template>
                   </template>
                 </div>
 
@@ -744,13 +752,20 @@ const nivelIgnoraVinculos = computed(
       ?.ignora_vinculos ?? false
 )
 
-// Gerente/Coordenador nao tem vinculo proprio: o escopo dele vem dos
-// Supervisores (ou Coordenadores) que respondem a ele — ver auth.escopo_efetivo.
 // Este campo diz de QUE NIVEL e o responsavel de quem esta sendo editado.
 const nivelDoResponsavel = computed(
   () =>
     niveis.value.find(nivel => nivel.valor === formulario.nivel)
       ?.nivel_do_responsavel || null
+)
+
+// Gerente/Coordenador: o alcance soma o vinculo da propria conta com o de
+// todo Supervisor (ou Coordenador) que responde a ela — ver
+// auth.escopo_efetivo. So pra ajustar o aviso da secao de Vinculos.
+const nivelSomaVinculoDeSubordinados = computed(
+  () =>
+    niveis.value.find(nivel => nivel.valor === formulario.nivel)
+      ?.soma_vinculo_de_subordinados ?? false
 )
 
 const opcoesResponsaveis = computed(() => {

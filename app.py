@@ -325,6 +325,11 @@ def niveis_para_tela(session=None):
             "ignora_vinculos": bool(dados.get("ignora_vinculos", False)),
             "personalizavel": nome not in auth.NIVEIS_PERMISSOES_FIXAS,
             "nivel_do_responsavel": auth.NIVEL_DO_RESPONSAVEL.get(nome),
+            # Gerente/Coordenador: o alcance soma o vinculo da propria conta
+            # com o de todo Supervisor (ou Coordenador) que responde a ela —
+            # ver auth.escopo_efetivo. A tela usa isto pra avisar sobre essa
+            # soma em vez de deixar parecer que so o vinculo proprio conta.
+            "soma_vinculo_de_subordinados": nome in auth.NIVEIS_HIERARQUICOS,
         }
         for nome, dados in auth.NIVEIS.items()
     ]

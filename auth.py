@@ -305,21 +305,30 @@ def _supervisores_subordinados(session, usuario_id, visitados=None):
 
 
 def escopo_efetivo(session, usuario):
-    """Para GERENTE/COORDENADOR: uniao dos vinculos de todos os Supervisores
-    abaixo dele na hierarquia (RESPONSAVEL_ID). E o que faz 'alocar nas
-    equipes dos Supervisores sob sua responsabilidade' virar uma checagem de
-    dados de verdade, e nao so uma frase na tela.
+    """Para GERENTE/COORDENADOR: uniao do vinculo proprio da conta com o
+    vinculo de todos os Supervisores abaixo dele na hierarquia
+    (RESPONSAVEL_ID). E o que faz 'alocar nas equipes dos Supervisores sob
+    sua responsabilidade' virar uma checagem de dados de verdade, e nao so
+    uma frase na tela — e deixa a pessoa acrescentar vinculo proprio direto
+    na conta dela mesma sem precisar cadastrar um Supervisor so pra isso.
 
-    SETOR e EQUIPE so entram no resultado quando algum Supervisor os usa —
-    ausencia continua significando 'nao restringe' (ver pode_atuar_na_base_e_tipo).
+    Antes disso contava so o vinculo dos subordinados: um Coordenador/Gerente
+    sem nenhum Supervisor abaixo (ou com subordinados sem vinculo) nao via
+    NADA, mesmo com vinculo preenchido na propria conta — a tela deixava
+    preencher e salvar normalmente, sem avisar que nao fazia efeito.
+
+    SETOR e EQUIPE so entram no resultado quando alguem (a propria conta ou
+    algum Supervisor) os usa — ausencia continua significando 'nao
+    restringe' (ver pode_atuar_na_base_e_tipo).
     """
     bases = set()
     tipos = set()
     setores = set()
     equipes = set()
 
-    for supervisor in _supervisores_subordinados(session, usuario.id):
-        for vinculo in supervisor.vinculos:
+    pessoas = [usuario] + _supervisores_subordinados(session, usuario.id)
+    for pessoa in pessoas:
+        for vinculo in pessoa.vinculos:
             if vinculo.TIPO == VINCULO_BASE:
                 bases.add(vinculo.VALOR)
             elif vinculo.TIPO == VINCULO_TIPO_EQUIPE:
