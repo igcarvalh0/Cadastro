@@ -335,7 +335,7 @@ let animandoFundo = false
 // Velocidade unica do fundo animado — nao depende mais de
 // prefers-reduced-motion (o Igor testou as duas e preferiu ficar so com
 // uma velocidade fixa, em vez de mudar conforme a preferencia do SO).
-const FATOR_MOVIMENTO_FUNDO = 3
+const FATOR_MOVIMENTO_FUNDO = 2.5
 
 const ladrilhos = [
   { x: -1, y: -1, cor: '#8E1834' },
