@@ -123,8 +123,10 @@
 
             </div>
 
+            <q-separator class="q-my-md" />
+
             <div class="row items-center q-col-gutter-md q-mt-none">
-              <div class="col-12 col-md-5">
+              <div class="col-12 col-md-4">
                 <q-input
                   v-model="filtroEquipe"
                   outlined
@@ -142,9 +144,7 @@
                   </q-tooltip>
                 </q-input>
               </div>
-            </div>
 
-            <div class="row items-center q-col-gutter-md q-mt-none">
               <div class="col-auto">
                 <q-btn-toggle
                   v-model="situacaoAlocacao"
