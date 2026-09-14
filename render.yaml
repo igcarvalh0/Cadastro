@@ -1,0 +1,31 @@
+# Configuração do Render (Blueprint).
+#
+# Ao conectar este repositório no Render (New > Blueprint), ele lê este
+# arquivo e já propõe o serviço configurado — só falta preencher DATABASE_URL
+# com a connection string do Neon (SECRET_KEY é gerada automaticamente).
+#
+# Também dá para configurar manualmente pelo dashboard (New > Web Service)
+# copiando os mesmos valores de buildCommand/startCommand daqui — ver
+# DEPLOY.md.
+
+services:
+  - type: web
+    name: gerenciador-equipes
+    runtime: python
+    plan: starter
+    region: oregon
+    branch: main
+    buildCommand: >-
+      pip install -r requirements.txt &&
+      cd frontend && npm ci && npm run build
+    startCommand: waitress-serve --host=0.0.0.0 --port=$PORT app:app
+    healthCheckPath: /api/status
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.6
+      - key: NODE_VERSION
+        value: 22.12.0
+      - key: DATABASE_URL
+        sync: false
+      - key: SECRET_KEY
+        generateValue: true
