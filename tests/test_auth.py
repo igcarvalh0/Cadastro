@@ -178,6 +178,51 @@ def test_equipe_especifica_restringe_quando_cadastrada():
     ) is False
 
 
+def test_coordenador_nao_cruza_vinculo_de_supervisores_diferentes():
+    """Caso real da RAFAELA: um Supervisor cobre PRES DUTRA/CONSTRUÇÃO e o
+    outro BARRA DO CORDA/LINHA VIVA. Ela herda os dois escopos, mas nao a
+    combinacao BARRA DO CORDA + CONSTRUÇÃO, que nao e de ninguem.
+    """
+    coordenadora = {
+        "ignora_vinculos": False,
+        "escopos": [
+            {
+                auth.VINCULO_BASE: ["PRES DUTRA"],
+                auth.VINCULO_TIPO_EQUIPE: ["CONSTRUÇÃO"],
+            },
+            {
+                auth.VINCULO_BASE: ["BARRA DO CORDA"],
+                auth.VINCULO_TIPO_EQUIPE: ["LINHA VIVA"],
+            },
+        ],
+        # a soma, que a tela exibe, nao pode mandar na checagem
+        "vinculos": {
+            auth.VINCULO_BASE: ["BARRA DO CORDA", "PRES DUTRA"],
+            auth.VINCULO_TIPO_EQUIPE: ["CONSTRUÇÃO", "LINHA VIVA"],
+        },
+    }
+
+    assert auth.pode_atuar_na_base_e_tipo(
+        coordenadora, "PRES DUTRA", "CONSTRUÇÃO"
+    ) is True
+    assert auth.pode_atuar_na_base_e_tipo(
+        coordenadora, "BARRA DO CORDA", "LINHA VIVA"
+    ) is True
+    assert auth.pode_atuar_na_base_e_tipo(
+        coordenadora, "BARRA DO CORDA", "CONSTRUÇÃO"
+    ) is False
+
+
+def test_escopo_de_subordinado_sem_vinculo_nao_vira_curinga():
+    coordenador = {
+        "ignora_vinculos": False,
+        "escopos": [{}, {auth.VINCULO_BASE: ["BACABAL"]}],
+    }
+
+    assert auth.pode_atuar_na_base_e_tipo(coordenador, "BACABAL", "PODA") is True
+    assert auth.pode_atuar_na_base_e_tipo(coordenador, "SÃO LUÍS", "PODA") is False
+
+
 # ============================================================
 # VISIBILIDADE DE EQUIPE
 # ============================================================

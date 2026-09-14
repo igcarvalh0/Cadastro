@@ -304,46 +304,53 @@ def _supervisores_subordinados(session, usuario_id, visitados=None):
     return supervisores
 
 
-def escopo_efetivo(session, usuario):
-    """Para GERENTE/COORDENADOR: uniao do vinculo proprio da conta com o
-    vinculo de todos os Supervisores abaixo dele na hierarquia
-    (RESPONSAVEL_ID). E o que faz 'alocar nas equipes dos Supervisores sob
-    sua responsabilidade' virar uma checagem de dados de verdade, e nao so
-    uma frase na tela — e deixa a pessoa acrescentar vinculo proprio direto
-    na conta dela mesma sem precisar cadastrar um Supervisor so pra isso.
+def _vinculos_por_tipo(pessoa):
+    """Os vinculos de UMA conta no formato {TIPO: [valores]}."""
+    agrupados = {}
+    for vinculo in pessoa.vinculos:
+        agrupados.setdefault(vinculo.TIPO, []).append(vinculo.VALOR)
+    return {tipo: sorted(set(valores)) for tipo, valores in agrupados.items()}
 
-    Antes disso contava so o vinculo dos subordinados: um Coordenador/Gerente
-    sem nenhum Supervisor abaixo (ou com subordinados sem vinculo) nao via
-    NADA, mesmo com vinculo preenchido na propria conta — a tela deixava
-    preencher e salvar normalmente, sem avisar que nao fazia efeito.
 
-    SETOR e EQUIPE so entram no resultado quando alguem (a propria conta ou
-    algum Supervisor) os usa — ausencia continua significando 'nao
-    restringe' (ver pode_atuar_na_base_e_tipo).
+def escopos_efetivos(session, usuario):
+    """Para GERENTE/COORDENADOR: a LISTA de escopos que ele herda — o vinculo
+    proprio da conta, mais o vinculo de CADA Supervisor abaixo dele na
+    hierarquia (RESPONSAVEL_ID), cada um separado.
+
+    Separado, e nao somado, de proposito. Juntar tudo num escopo so misturava
+    as dimensoes de pessoas diferentes e criava combinacoes que ninguem tem:
+    a RAFAELA (Coordenadora) tinha o GABRIEL em PRES DUTRA/CONSTRUÇÃO e o
+    RAFAEL em PRES DUTRA + BARRA DO CORDA/PODA+LINHA VIVA+TAT; a soma virava
+    bases={PRES DUTRA, BARRA DO CORDA} x tipos={CONSTRUÇÃO, PODA, LINHA VIVA,
+    TAT}, e ela passava a ver a CONSTRUÇÃO de Barra do Corda, que nao e de
+    nenhum dos dois. Agora vale a regra certa: ela ve o que o GABRIEL ve, OU
+    o que o RAFAEL ve, OU o que o vinculo da propria conta dela cobre.
+
+    Contas sem nenhum vinculo entram como escopo vazio e nao cobrem nada
+    (ver pode_atuar_na_base_e_tipo) — nao viram curinga.
     """
-    bases = set()
-    tipos = set()
-    setores = set()
-    equipes = set()
-
     pessoas = [usuario] + _supervisores_subordinados(session, usuario.id)
-    for pessoa in pessoas:
-        for vinculo in pessoa.vinculos:
-            if vinculo.TIPO == VINCULO_BASE:
-                bases.add(vinculo.VALOR)
-            elif vinculo.TIPO == VINCULO_TIPO_EQUIPE:
-                tipos.add(vinculo.VALOR)
-            elif vinculo.TIPO == VINCULO_SETOR:
-                setores.add(vinculo.VALOR)
-            elif vinculo.TIPO == VINCULO_EQUIPE:
-                equipes.add(vinculo.VALOR)
+    return [_vinculos_por_tipo(pessoa) for pessoa in pessoas]
 
-    escopo = {VINCULO_BASE: sorted(bases), VINCULO_TIPO_EQUIPE: sorted(tipos)}
-    if setores:
-        escopo[VINCULO_SETOR] = sorted(setores)
-    if equipes:
-        escopo[VINCULO_EQUIPE] = sorted(equipes)
-    return escopo
+
+def escopo_efetivo(session, usuario):
+    """A uniao dos escopos acima, num dicionario so. Serve para MOSTRAR na
+    tela de Usuarios o alcance de um Gerente/Coordenador de forma legivel —
+    quem decide o que ele ve e escopos_efetivos, nao isto aqui.
+    """
+    uniao = {}
+    for escopo in escopos_efetivos(session, usuario):
+        for tipo, valores in escopo.items():
+            uniao.setdefault(tipo, set()).update(valores)
+
+    resultado = {
+        VINCULO_BASE: sorted(uniao.get(VINCULO_BASE, ())),
+        VINCULO_TIPO_EQUIPE: sorted(uniao.get(VINCULO_TIPO_EQUIPE, ())),
+    }
+    for tipo in (VINCULO_SETOR, VINCULO_EQUIPE):
+        if uniao.get(tipo):
+            resultado[tipo] = sorted(uniao[tipo])
+    return resultado
 
 
 def descrever_usuario(usuario, incluir_vinculos=True, session=None):
@@ -365,14 +372,14 @@ def descrever_usuario(usuario, incluir_vinculos=True, session=None):
 
     if incluir_vinculos:
         if usuario.NIVEL in NIVEIS_HIERARQUICOS and session is not None:
-            # Gerente/Coordenador nao tem vinculo proprio: o escopo dele E a
-            # soma dos vinculos dos Supervisores abaixo, calculada agora.
+            # Gerente/Coordenador herda o escopo de cada Supervisor abaixo
+            # dele, alem do vinculo da propria conta. 'escopos' e o que vale
+            # na checagem (um por pessoa, avaliados em OU); 'vinculos' e a
+            # soma deles, so para exibir na tela. Ver escopos_efetivos.
+            dados["escopos"] = escopos_efetivos(session, usuario)
             dados["vinculos"] = escopo_efetivo(session, usuario)
         else:
-            vinculos = {}
-            for vinculo in usuario.vinculos:
-                vinculos.setdefault(vinculo.TIPO, []).append(vinculo.VALOR)
-            dados["vinculos"] = {tipo: sorted(v) for tipo, v in vinculos.items()}
+            dados["vinculos"] = _vinculos_por_tipo(usuario)
 
     return dados
 
@@ -405,7 +412,24 @@ def pode_atuar_na_base_e_tipo(usuario, base, tipo_equipe, setor=None, equipe_id=
     if usuario.get("ignora_vinculos"):
         return True
 
-    vinculos = usuario.get("vinculos") or {}
+    # Gerente/Coordenador carrega um escopo por pessoa da equipe dele
+    # (ver escopos_efetivos): basta UM cobrir a vaga. Avaliar cada escopo
+    # inteiro, em vez da soma de todos, evita liberar combinacoes de base e
+    # tipo que nenhum Supervisor sozinho tem.
+    escopos = usuario.get("escopos")
+    if escopos is not None:
+        return any(
+            _escopo_cobre(escopo, base, tipo_equipe, setor, equipe_id)
+            for escopo in escopos
+        )
+
+    return _escopo_cobre(
+        usuario.get("vinculos") or {}, base, tipo_equipe, setor, equipe_id
+    )
+
+
+def _escopo_cobre(vinculos, base, tipo_equipe, setor, equipe_id):
+    """A regra do vinculo aplicada a UM escopo ({TIPO: [valores]})."""
     bases = set(vinculos.get(VINCULO_BASE, []))
     tipos = set(vinculos.get(VINCULO_TIPO_EQUIPE, []))
     setores = set(vinculos.get(VINCULO_SETOR, []))
