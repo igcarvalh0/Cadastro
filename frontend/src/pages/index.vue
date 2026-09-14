@@ -37,7 +37,7 @@
         <q-card flat bordered class="q-mb-md barra-filtros">
           <q-card-section>
             <div class="row q-col-gutter-md">
-              <div class="col-6 col-md-3">
+              <div class="col-6 col-md">
                 <q-select
                   :model-value="baseSelecionada"
                   :options="opcoesBases"
@@ -59,7 +59,7 @@
                 </q-select>
               </div>
 
-              <div class="col-6 col-md-3">
+              <div class="col-6 col-md">
                 <q-select
                   v-model="tipoSelecionado"
                   :options="opcoesTipos"
@@ -78,7 +78,7 @@
                 </q-select>
               </div>
 
-              <div class="col-6 col-md-3">
+              <div class="col-6 col-md">
                 <q-select
                   v-model="setorSelecionado"
                   :options="opcoesSetores"
@@ -97,7 +97,7 @@
                 </q-select>
               </div>
 
-              <div class="col-6 col-md-3">
+              <div class="col-6 col-md">
                 <q-select
                   v-model="coordenadorSelecionado"
                   :options="opcoesCoordenadores"
@@ -116,7 +116,7 @@
                 </q-select>
               </div>
 
-              <div class="col-6 col-md-3">
+              <div class="col-6 col-md">
                 <q-select
                   v-model="supervisorSelecionado"
                   :options="opcoesSupervisores"

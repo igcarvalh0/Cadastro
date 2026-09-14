@@ -37,7 +37,7 @@
         <q-card flat bordered class="q-mb-md barra-filtros">
           <q-card-section>
             <div class="row items-center q-col-gutter-md">
-              <div class="col-12 col-md-4">
+              <div class="col-12 col-sm-6 col-md">
                 <q-select
                   :model-value="baseSelecionada"
                   :options="opcoesBases"
@@ -57,7 +57,7 @@
                 </q-select>
               </div>
 
-              <div class="col-12 col-md-3">
+              <div class="col-12 col-sm-6 col-md">
                 <q-select
                   v-model="tipoSelecionado"
                   :options="opcoesTipos"
@@ -73,7 +73,7 @@
                 </q-select>
               </div>
 
-              <div class="col-12 col-md-3">
+              <div class="col-12 col-sm-6 col-md">
                 <q-select
                   v-model="setorSelecionado"
                   :options="opcoesSetores"
@@ -89,7 +89,7 @@
                 </q-select>
               </div>
 
-              <div class="col-12 col-md-3">
+              <div class="col-12 col-sm-6 col-md">
                 <q-select
                   v-model="coordenadorSelecionado"
                   :options="opcoesCoordenadores"
@@ -105,7 +105,7 @@
                 </q-select>
               </div>
 
-              <div class="col-12 col-md-3">
+              <div class="col-12 col-sm-6 col-md">
                 <q-select
                   v-model="supervisorSelecionado"
                   :options="opcoesSupervisores"
@@ -121,7 +121,10 @@
                 </q-select>
               </div>
 
-              <div class="col-12 col-md-3">
+            </div>
+
+            <div class="row items-center q-col-gutter-md q-mt-none">
+              <div class="col-12 col-md-5">
                 <q-input
                   v-model="filtroEquipe"
                   outlined
@@ -139,7 +142,9 @@
                   </q-tooltip>
                 </q-input>
               </div>
+            </div>
 
+            <div class="row items-center q-col-gutter-md q-mt-none">
               <div class="col-auto">
                 <q-btn-toggle
                   v-model="situacaoAlocacao"
