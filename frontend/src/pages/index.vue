@@ -115,6 +115,25 @@
                   </template>
                 </q-select>
               </div>
+
+              <div class="col-6 col-md-3">
+                <q-select
+                  v-model="supervisorSelecionado"
+                  :options="opcoesSupervisores"
+                  label="Supervisor"
+                  outlined
+                  dense
+                  rounded
+                  emit-value
+                  map-options
+                  class="campo-filtro"
+                  @update:model-value="carregarResumo"
+                >
+                  <template #prepend>
+                    <q-icon name="engineering" size="20px" />
+                  </template>
+                </q-select>
+              </div>
             </div>
           </q-card-section>
 
@@ -773,6 +792,8 @@ const setorSelecionado = ref('')
 const setoresFiltro = ref([])
 const coordenadorSelecionado = ref('')
 const coordenadoresFiltro = ref([])
+const supervisorSelecionado = ref('')
+const supervisoresFiltro = ref([])
 
 const visaoIndicadores = ref('tabela')
 
@@ -835,6 +856,14 @@ const opcoesCoordenadores = computed(() => [
   ...coordenadoresFiltro.value.map(coordenador => ({
     label: coordenador,
     value: coordenador
+  }))
+])
+
+const opcoesSupervisores = computed(() => [
+  { label: 'Todos os supervisores', value: '' },
+  ...supervisoresFiltro.value.map(supervisor => ({
+    label: supervisor,
+    value: supervisor
   }))
 ])
 
@@ -1507,6 +1536,10 @@ async function carregarResumo() {
       parametros.set('coordenador', coordenadorSelecionado.value)
     }
 
+    if (supervisorSelecionado.value) {
+      parametros.set('supervisor', supervisorSelecionado.value)
+    }
+
     const resposta = await fetch(`/api/resumo?${parametros}`)
 
     if (!resposta.ok) {
@@ -1531,6 +1564,7 @@ async function carregarResumo() {
     tiposFiltro.value = dados.tipos_filtro || []
     setoresFiltro.value = dados.setores_filtro || []
     coordenadoresFiltro.value = dados.coordenadores_filtro || []
+    supervisoresFiltro.value = dados.supervisores_filtro || []
 
     pessoasDisponiveis.value = dados.pessoas_disponiveis || []
 

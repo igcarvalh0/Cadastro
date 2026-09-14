@@ -90,6 +90,38 @@
               </div>
 
               <div class="col-12 col-md-3">
+                <q-select
+                  v-model="coordenadorSelecionado"
+                  :options="opcoesCoordenadores"
+                  label="Coordenador"
+                  outlined
+                  dense
+                  emit-value
+                  map-options
+                >
+                  <template #prepend>
+                    <q-icon name="badge" size="20px" />
+                  </template>
+                </q-select>
+              </div>
+
+              <div class="col-12 col-md-3">
+                <q-select
+                  v-model="supervisorSelecionado"
+                  :options="opcoesSupervisores"
+                  label="Supervisor"
+                  outlined
+                  dense
+                  emit-value
+                  map-options
+                >
+                  <template #prepend>
+                    <q-icon name="engineering" size="20px" />
+                  </template>
+                </q-select>
+              </div>
+
+              <div class="col-12 col-md-3">
                 <q-input
                   v-model="filtroEquipe"
                   outlined
@@ -969,13 +1001,16 @@ import { PODE_VER_EQUIPES } from '../composables/useSessao'
 import {
   CHAVE_BASES_SELECIONADAS,
   ehEquipeFolguista,
+  equipeCombinaComResponsavel,
   equipeCombinaComSetor,
   equipeCombinaComTipo,
   normalizarSelecaoBases,
   OPCAO_TODAS_BASES,
+  opcoesResponsavelFiltro,
   opcoesSetorFiltro,
   opcoesTipoFiltro,
   proximaSelecaoBases,
+  RESPONSAVEL_TODOS,
   SETOR_TODOS,
   TIPO_TODOS
 } from '../utils/equipes'
@@ -1004,6 +1039,8 @@ const erro = ref('')
 const baseSelecionada = ref([])
 const tipoSelecionado = ref(TIPO_TODOS)
 const setorSelecionado = ref(SETOR_TODOS)
+const coordenadorSelecionado = ref(RESPONSAVEL_TODOS)
+const supervisorSelecionado = ref(RESPONSAVEL_TODOS)
 const filtroEquipe = ref('')
 const situacaoAlocacao = ref('TODAS')
 const limpandoAlocacoes = ref(false)
@@ -1215,6 +1252,14 @@ const opcoesTipos = computed(() => opcoesTipoFiltro(equipes.value))
 
 const opcoesSetores = computed(() => opcoesSetorFiltro(equipes.value))
 
+const opcoesCoordenadores = computed(() =>
+  opcoesResponsavelFiltro(equipes.value, 'coordenador', 'Todos os coordenadores')
+)
+
+const opcoesSupervisores = computed(() =>
+  opcoesResponsavelFiltro(equipes.value, 'supervisor', 'Todos os supervisores')
+)
+
 // ============================================================
 // EQUIPES FILTRADAS
 // ============================================================
@@ -1256,7 +1301,9 @@ const equipesFiltradas = computed(() => {
   const equipesVisiveis = visiveisPorBase.filter(equipe => {
     if (
       !equipeCombinaComTipo(equipe, tipoSelecionado.value) ||
-      !equipeCombinaComSetor(equipe, setorSelecionado.value)
+      !equipeCombinaComSetor(equipe, setorSelecionado.value) ||
+      !equipeCombinaComResponsavel(equipe, 'coordenador', coordenadorSelecionado.value) ||
+      !equipeCombinaComResponsavel(equipe, 'supervisor', supervisorSelecionado.value)
     ) {
       return false
     }

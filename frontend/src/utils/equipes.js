@@ -103,6 +103,56 @@ export function opcoesSetorFiltro(equipes) {
 }
 
 // ------------------------------------------------------------
+// Filtro de coordenador / supervisor
+// ------------------------------------------------------------
+//
+// Igual ao setor, os dois sao informados POR VAGA (disciplina), nao por
+// equipe — a mesma equipe pode ter uma vaga de construcao com um
+// coordenador e uma de poda com outro. Por isso as duas funcoes abaixo
+// recebem o nome do campo ('coordenador' ou 'supervisor') em vez de existir
+// um par quase identico para cada um.
+
+export const RESPONSAVEL_TODOS = 'TODOS'
+
+export function responsaveisDaEquipe(equipe, campo) {
+  const valores = new Set()
+
+  for (const vaga of equipe?.vagas || []) {
+    const valor = String(vaga?.[campo] || '').trim()
+    if (valor) {
+      valores.add(valor)
+    }
+  }
+
+  return [...valores]
+}
+
+export function equipeCombinaComResponsavel(equipe, campo, filtro) {
+  if (!filtro || filtro === RESPONSAVEL_TODOS) {
+    return true
+  }
+
+  return responsaveisDaEquipe(equipe, campo).includes(filtro)
+}
+
+export function opcoesResponsavelFiltro(equipes, campo, rotuloTodos) {
+  const valores = new Set()
+
+  for (const equipe of equipes || []) {
+    for (const valor of responsaveisDaEquipe(equipe, campo)) {
+      valores.add(valor)
+    }
+  }
+
+  return [
+    { label: rotuloTodos, value: RESPONSAVEL_TODOS },
+    ...[...valores]
+      .sort((a, b) => a.localeCompare(b, 'pt-BR'))
+      .map(valor => ({ label: valor, value: valor }))
+  ]
+}
+
+// ------------------------------------------------------------
 // Filtro de base com a opcao "Todas as bases", compartilhado entre telas
 // ------------------------------------------------------------
 

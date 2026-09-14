@@ -393,6 +393,7 @@ def obter_resumo():
         filtro_tipo = request.args.get("tipo", "").strip()
         filtro_setor = request.args.get("setor", "").strip()
         filtro_coordenador = request.args.get("coordenador", "").strip()
+        filtro_supervisor = request.args.get("supervisor", "").strip()
 
         equipes = (
             session.query(Equipe)
@@ -409,6 +410,7 @@ def obter_resumo():
         pessoas_disponiveis = {}
         tipos_existentes = set()
         coordenadores_existentes = set()
+        supervisores_existentes = set()
 
         for equipe in equipes:
             if not auth.equipe_visivel(
@@ -433,12 +435,15 @@ def obter_resumo():
                 c for c in (equipe.composicoes or []) if vaga_no_escopo(usuario, equipe, c)
             ]
 
-            # o tipo e o coordenador alimentam o filtro mesmo quando a base
+            # o tipo, o coordenador e o supervisor alimentam o filtro mesmo
+            # quando a base
             # esta filtrada fora
             for composicao in composicoes_visiveis:
                 tipos_existentes.add(tipo_equipe_da_vaga(composicao))
                 if composicao.COORDENADOR and composicao.COORDENADOR.strip():
                     coordenadores_existentes.add(composicao.COORDENADOR.strip())
+                if composicao.SUPERVISOR and composicao.SUPERVISOR.strip():
+                    supervisores_existentes.add(composicao.SUPERVISOR.strip())
             if folguista and composicoes_visiveis:
                 tipos_existentes.add("FOLGUISTA")
 
@@ -480,6 +485,9 @@ def obter_resumo():
                     continue
 
                 if filtro_coordenador and normalizar(composicao.COORDENADOR or "") != normalizar(filtro_coordenador):
+                    continue
+
+                if filtro_supervisor and normalizar(composicao.SUPERVISOR or "") != normalizar(filtro_supervisor):
                     continue
 
                 funcao_exibicao = padronizar_funcao(composicao.FUNÇÃO_ER)
@@ -676,6 +684,8 @@ def obter_resumo():
             "setor_selecionado": filtro_setor,
             "coordenadores_filtro": sorted(coordenadores_existentes),
             "coordenador_selecionado": filtro_coordenador,
+            "supervisores_filtro": sorted(supervisores_existentes),
+            "supervisor_selecionado": filtro_supervisor,
             "pessoas_disponiveis": lista_disponiveis,
             "nao_alocados_por_base": list(nao_alocados.values()),
         })
