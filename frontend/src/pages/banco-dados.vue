@@ -161,7 +161,7 @@
         <!-- CONTEÚDO -->
         <!-- ================================================== -->
 
-        <div v-if="carregando" class="row justify-center q-pa-xl">
+        <div v-if="carregando && primeiraCarga" class="row justify-center q-pa-xl">
           <q-spinner color="primary" size="50px" />
         </div>
 
@@ -991,6 +991,13 @@ const equipes = ref([])
 const colaboradores = ref([])
 
 const carregando = ref(false)
+// Spinner que OCUPA a tela inteira só na primeira abertura. Numa recarga
+// (depois de alocar, salvar, aplicar planilha...) o conteúdo fica no lugar:
+// trocar tudo pelo spinner desmontava a lista, a página encolhia para menos
+// de uma tela e o navegador jogava a rolagem para o topo — além de fechar a
+// equipe que estivesse aberta. O ícone de atualizar do cabeçalho continua
+// girando, então o recarregamento não fica invisível.
+const primeiraCarga = ref(true)
 
 const erro = ref('')
 
@@ -1444,6 +1451,7 @@ async function carregarDados() {
     erro.value = e.message || 'Erro ao carregar dados.'
   } finally {
     carregando.value = false
+    primeiraCarga.value = false
   }
 }
 
@@ -1553,10 +1561,16 @@ async function salvarEdicaoAlocacao(confirmarTransferencia = false) {
       throw new Error(dados.erro || 'Erro ao trocar o colaborador.')
     }
 
+    const composicaoId = vagaEmEdicao.value.id
+
     dialogEdicaoAlocacao.value = false
     vagaEmEdicao.value = null
     colaboradorNovoEdicao.value = null
 
+    // igual à alocação: mostra a troca na hora e relê o banco em seguida,
+    // sem desmontar a tela (quem saiu volta a ficar livre dentro do
+    // atualizarEstadoAposAlocacao)
+    atualizarEstadoAposAlocacao(composicaoId, dados.colaborador)
     await carregarDados()
   } catch (e) {
     erro.value = e.message || 'Erro ao trocar o colaborador.'
@@ -1742,34 +1756,79 @@ function localizarVaga(composicaoId) {
   return null
 }
 
-function atualizarEstadoAposAlocacao(composicaoId, colaborador) {
+/**
+ * Põe o colaborador na vaga aqui na tela, sem esperar a releitura do banco.
+ *
+ * Mesma ideia do atualizarEstadoAposRemocao logo abaixo: a resposta do
+ * servidor já confirmou a mudança, então dá pra refletir na hora e deixar a
+ * rebusca acontecer depois, sem a tela piscar nem perder a rolagem. Os
+ * contadores ("alocados", "livres") saem de computed sobre estas mesmas
+ * listas, então se ajustam sozinhos.
+ *
+ * Cobre os dois efeitos colaterais de uma alocação:
+ * - a vaga podia estar ocupada por outra pessoa (troca) — quem sai volta a
+ *   ficar livre;
+ * - quem entra podia estar em outra vaga (transferência) — aquela vaga fica
+ *   vazia. Procuro pela CHAPA em vez de confiar num id vindo da resposta:
+ *   funciona igual tendo passado pelo aviso de conflito ou não.
+ */
+function atualizarEstadoAposAlocacao(composicaoId, dadosColaborador) {
+  const chapa = String(dadosColaborador?.chapa || '')
+  if (!chapa) {
+    return
+  }
+
+  // transferência: esvazia a vaga de onde a pessoa saiu
+  for (const equipe of equipes.value) {
+    for (const outra of equipe.vagas || []) {
+      if (
+        String(outra.id) !== String(composicaoId) &&
+        String(outra.colaborador?.chapa || '') === chapa
+      ) {
+        outra.colaborador = null
+        outra.ocupada = false
+      }
+    }
+  }
+
   const vaga = localizarVaga(composicaoId)
 
   if (vaga) {
+    // troca: quem estava nesta vaga volta pra lista de livres
+    const chapaAnterior = String(vaga.colaborador?.chapa || '')
+
+    if (chapaAnterior && chapaAnterior !== chapa) {
+      const anterior = colaboradores.value.find(item => item.chapa === chapaAnterior)
+      if (anterior) {
+        anterior.alocado = false
+      }
+    }
+
     vaga.colaborador = {
-      ...colaborador,
-      alocado: true
+      chapa,
+      nome: dadosColaborador.nome || '',
+      funcao: dadosColaborador.funcao || ''
     }
     vaga.ocupada = true
   }
 
-  const colaboradorLista = colaboradores.value.find(
-    item => item.chapa === colaborador.chapa
-  )
+  const colaboradorLista = colaboradores.value.find(item => item.chapa === chapa)
 
   if (colaboradorLista) {
     colaboradorLista.alocado = true
   }
 
-  for (const equipe of Object.values(opcoesAlocacao.value)) {
-    const equipeAlocacaoAtual = equipe.find(item =>
+  // tira a vaga recém-ocupada do seletor "Vaga" do diálogo de alocar, que
+  // só lista vaga livre
+  for (const equipesDaBase of Object.values(opcoesAlocacao.value)) {
+    const equipeComAVaga = equipesDaBase.find(item =>
       (item.vagas || []).some(
         vagaItem => String(vagaItem.id) === String(composicaoId)
       )
     )
 
-    if (equipeAlocacaoAtual) {
-      equipeAlocacaoAtual.vagas = equipeAlocacaoAtual.vagas.filter(
+    if (equipeComAVaga) {
+      equipeComAVaga.vagas = equipeComAVaga.vagas.filter(
         vagaItem => String(vagaItem.id) !== String(composicaoId)
       )
       break
@@ -1791,6 +1850,7 @@ function atualizarEstadoAposRemocao(chapa, composicaoId) {
     colaborador.alocado = false
   }
 }
+
 
 async function alocarColaborador(confirmarTransferencia = false) {
   if (!colaboradorSelecionado.value || !vagaAlocacao.value) {
@@ -1834,6 +1894,10 @@ async function alocarColaborador(confirmarTransferencia = false) {
     equipeAlocacao.value = null
     vagaAlocacao.value = null
 
+    // reflete na hora e só depois relê o banco: a tela não some, a rolagem
+    // fica onde está e a equipe aberta continua aberta. A rebusca ainda
+    // acontece (é ela que traz o que outras pessoas mudaram enquanto isso).
+    atualizarEstadoAposAlocacao(composicaoId, dados.colaborador)
     await carregarDados()
   } catch (e) {
     erro.value = e.message || 'Erro ao alocar colaborador.'

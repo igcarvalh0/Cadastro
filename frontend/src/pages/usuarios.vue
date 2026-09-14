@@ -415,7 +415,7 @@
 
           <q-separator />
 
-          <div v-if="carregando" class="row justify-center q-pa-xl">
+          <div v-if="carregando && primeiraCarga" class="row justify-center q-pa-xl">
             <q-spinner color="primary" size="40px" />
           </div>
 
@@ -906,6 +906,13 @@ const PERMISSOES = [
 const usuarios = ref([])
 const equipes = ref([])
 const carregando = ref(false)
+// Spinner que OCUPA a tela inteira só na primeira abertura. Numa recarga
+// (depois de alocar, salvar, aplicar planilha...) o conteúdo fica no lugar:
+// trocar tudo pelo spinner desmontava a lista, a página encolhia para menos
+// de uma tela e o navegador jogava a rolagem para o topo — além de fechar a
+// equipe que estivesse aberta. O ícone de atualizar do cabeçalho continua
+// girando, então o recarregamento não fica invisível.
+const primeiraCarga = ref(true)
 const erro = ref('')
 const sucesso = ref('')
 
@@ -1056,6 +1063,7 @@ async function carregarTudo() {
     erro.value = e.message || 'Erro ao carregar os usuários.'
   } finally {
     carregando.value = false
+    primeiraCarga.value = false
   }
 }
 
