@@ -398,11 +398,30 @@
         <q-card bordered>
           <q-card-section>
             <div class="row items-center q-col-gutter-sm">
-              <div class="col">
+              <div class="col-12 col-md">
                 <div class="text-h6"> Cadastrados </div>
               </div>
 
-              <div class="col-auto">
+              <div class="col-12 col-md-4">
+                <q-input
+                  v-model="filtroUsuario"
+                  outlined
+                  dense
+                  clearable
+                  placeholder="Nome, login, nível, base, setor..."
+                >
+                  <template #prepend>
+                    <q-icon name="search" />
+                  </template>
+                  <q-tooltip>
+                    Busca pelo nome e login, e também pelo nível, por quem a
+                    pessoa responde e pelos vínculos dela (ex.: GOMAN,
+                    PRES DUTRA).
+                  </q-tooltip>
+                </q-input>
+              </div>
+
+              <div class="col-12 col-md-auto">
                 <q-btn
                   color="primary"
                   icon="person_add"
@@ -426,7 +445,13 @@
               </q-item-section>
             </q-item>
 
-            <q-item v-for="pessoa in usuarios" :key="pessoa.id">
+            <q-item v-else-if="!usuariosFiltrados.length">
+              <q-item-section class="text-grey-7">
+                Nenhum usuário encontrado para "{{ filtroUsuario }}".
+              </q-item-section>
+            </q-item>
+
+            <q-item v-for="pessoa in usuariosFiltrados" :key="pessoa.id">
               <q-item-section>
                 <q-item-label class="text-weight-medium">
                   {{ pessoa.nome }}
@@ -1032,6 +1057,32 @@ function resumoVinculos(pessoa) {
 
   return partes.join(' · ')
 }
+
+// A busca cobre tudo que a própria linha mostra — nome, login, nível, a
+// quem responde e os vínculos. Procurar por "GOMAN" ou "PRES DUTRA" e achar
+// quem tem aquele escopo é o caso mais útil no dia a dia, e sai de graça
+// reaproveitando o mesmo resumoVinculos que a linha já exibe.
+const filtroUsuario = ref('')
+
+const usuariosFiltrados = computed(() => {
+  const filtro = (filtroUsuario.value || '').trim().toLowerCase()
+
+  if (!filtro) {
+    return usuarios.value
+  }
+
+  return usuarios.value.filter(pessoa =>
+    [
+      pessoa.nome,
+      pessoa.usuario,
+      pessoa.nivel_rotulo,
+      pessoa.responsavel_nome,
+      resumoVinculos(pessoa)
+    ]
+      .filter(Boolean)
+      .some(texto => String(texto).toLowerCase().includes(filtro))
+  )
+})
 
 function limparAvisos() {
   erro.value = ''
